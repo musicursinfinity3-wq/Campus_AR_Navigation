@@ -1,0 +1,35 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: af240876c5160104cba2e15f7d7d693e, type: 3}
+  m_Name: CampusLocationDatabase
+  m_EditorClassIdentifier: Assembly-CSharp::CampusNavigation.Data.CampusLocationDatabase
+  locations:
+  - locationName: Library
+    openDays: Monday - Saturday
+    officeHours: 7:30 AM - 7:00 PM
+    additionalInfo: Closed on Sundays and Holidays
+  - locationName: Registrar
+    openDays: Monday - Friday
+    officeHours: 8:00 AM - 5:00 PM
+    additionalInfo: 'Lunch Break: 12:00 PM - 1:00 PM'
+  - locationName: Accounting
+    openDays: Monday - Friday
+    officeHours: 8:00 AM - 5:00 PM
+    additionalInfo: Window 1 to 4
+  - locationName: Clinic
+    openDays: Monday - Friday
+    officeHours: 8:00 AM - 5:00 PM
+    additionalInfo: Nurse on duty
+  - locationName: Guidance Office
+    openDays: Monday - Friday
+    officeHours: 8:00 AM - 5:00 PM
+    additionalInfo: By appointment or walk-in

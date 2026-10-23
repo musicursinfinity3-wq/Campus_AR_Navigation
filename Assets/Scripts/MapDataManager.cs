@@ -1,0 +1,183 @@
+using System;
+using System.IO;
+using CampusNavigation.Data;
+using UnityEngine;
+using UnityEngine.Networking;
+
+namespace CampusNavigation.Data
+{
+    public class MapDataManager : MonoBehaviour
+    {
+        public static MapDataManager Instance { get; private set; }
+
+        public const string MAP_FILE_NAME = "campus_map.json";
+
+        public CampusMapData CurrentMap { get; private set; }
+
+        public event Action<CampusMapData> OnMapLoaded;
+
+        private void Awake()
+        {
+            if (Instance != null && Instance != this)
+            {
+                Destroy(gameObject);
+                return;
+            }
+            Instance = this;
+            DontDestroyOnLoad(gameObject);
+        }
+
+        private void Start()
+        {
+            LoadMap();
+        }
+
+        /// <summary>
+        /// Saves a newly recorded map to the device's persistent storage.
+        /// </summary>
+        public bool SaveMapToPersistentData(CampusMapData mapData)
+        {
+            try
+            {
+                string path = Path.Combine(Application.persistentDataPath, MAP_FILE_NAME);
+                string json = JsonUtility.ToJson(mapData, true);
+                File.WriteAllText(path, json);
+#if UNITY_EDITOR
+                // In the Editor, also automatically save directly into StreamingAssets
+                // so your build APK always has the latest recorded map!
+                string streamingDir = Application.streamingAssetsPath;
+                if (!Directory.Exists(streamingDir))
+                {
+                    Directory.CreateDirectory(streamingDir);
+                }
+                string streamingPath = Path.Combine(streamingDir, MAP_FILE_NAME);
+                File.WriteAllText(streamingPath, json);
+                if (!Application.isPlaying)
+                {
+                    UnityEditor.AssetDatabase.Refresh();
+                }
+                Debug.Log(
+                    $"[MapDataManager] Editor: Auto-synced map to StreamingAssets: {streamingPath}"
+                );
+#endif
+                CurrentMap = mapData;
+                OnMapLoaded?.Invoke(CurrentMap);
+                Debug.Log($"[MapDataManager] Map saved successfully to: {path}");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[MapDataManager] Failed to save map: {ex.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Deletes the saved map file from the device and clears the in-memory map.
+        /// </summary>
+        public bool DeleteSavedMap()
+        {
+            try
+            {
+                string path = Path.Combine(Application.persistentDataPath, MAP_FILE_NAME);
+                if (File.Exists(path))
+                {
+                    File.Delete(path);
+                    Debug.Log($"[MapDataManager] Deleted map file at: {path}");
+                }
+
+                CurrentMap = new CampusMapData();
+                OnMapLoaded?.Invoke(CurrentMap);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[MapDataManager] Failed to delete map: {ex.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Loads the map. Checks persistentDataPath first (user updates/admin recordings),
+        /// falling back to StreamingAssets (bundled read-only build map).
+        /// </summary>
+        public void LoadMap(Action<CampusMapData> onComplete = null)
+        {
+            string persistentPath = Path.Combine(Application.persistentDataPath, MAP_FILE_NAME);
+
+            // 1. Check persistent data path first (e.g. updated map or recorded on-device)
+            if (File.Exists(persistentPath))
+            {
+                try
+                {
+                    string json = File.ReadAllText(persistentPath);
+                    CurrentMap = JsonUtility.FromJson<CampusMapData>(json);
+                    Debug.Log("[MapDataManager] Loaded map from persistentDataPath.");
+                    onComplete?.Invoke(CurrentMap);
+                    OnMapLoaded?.Invoke(CurrentMap);
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogWarning(
+                        $"[MapDataManager] Persistent map load failed, falling back to StreamingAssets: {ex.Message}"
+                    );
+                }
+            }
+
+            // 2. Fall back to StreamingAssets (works asynchronously on Android APK)
+            StartCoroutine(LoadFromStreamingAssetsCoroutine(onComplete));
+        }
+
+        private System.Collections.IEnumerator LoadFromStreamingAssetsCoroutine(
+            Action<CampusMapData> onComplete
+        )
+        {
+            string streamingPath = Path.Combine(Application.streamingAssetsPath, MAP_FILE_NAME);
+            string json = "";
+
+            if (streamingPath.Contains("://") || streamingPath.Contains(":///"))
+            {
+                // Android requires UnityWebRequest to read from compressed APK
+                using (UnityWebRequest uwr = UnityWebRequest.Get(streamingPath))
+                {
+                    yield return uwr.SendWebRequest();
+                    if (uwr.result == UnityWebRequest.Result.Success)
+                    {
+                        json = uwr.downloadHandler.text;
+                    }
+                    else
+                    {
+                        Debug.LogError($"[MapDataManager] StreamingAssets read error: {uwr.error}");
+                    }
+                }
+            }
+            else
+            {
+                // Standalone / iOS / Editor
+                if (File.Exists(streamingPath))
+                {
+                    json = File.ReadAllText(streamingPath);
+                }
+            }
+
+            if (!string.IsNullOrEmpty(json))
+            {
+                CurrentMap = JsonUtility.FromJson<CampusMapData>(json);
+                Debug.Log(
+                    $"[MapDataManager] Loaded map from StreamingAssets. Nodes: {CurrentMap.nodes.Count}"
+                );
+            }
+            else
+            {
+                Debug.LogWarning(
+                    "[MapDataManager] No map file found in StreamingAssets. Initializing blank map."
+                );
+                CurrentMap = new CampusMapData();
+            }
+
+            onComplete?.Invoke(CurrentMap);
+            OnMapLoaded?.Invoke(CurrentMap);
+        }
+    }
+}

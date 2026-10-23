@@ -1,0 +1,11 @@
+Model Information:
+* title:	arrow
+* source:	https://sketchfab.com/3d-models/arrow-bd395aa897ad45a19505f63d82519df3
+* author:	Pun1shR (https://sketchfab.com/pun1shr)
+
+Model License:
+* license type:	CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+* requirements:	Author must be credited. Commercial use is allowed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "arrow" (https://sketchfab.com/3d-models/arrow-bd395aa897ad45a19505f63d82519df3) by Pun1shR (https://sketchfab.com/pun1shr) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)

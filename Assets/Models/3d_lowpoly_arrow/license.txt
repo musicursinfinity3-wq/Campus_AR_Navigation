@@ -1,0 +1,11 @@
+Model Information:
+* title:	3D LowPoly Arrow
+* source:	https://sketchfab.com/3d-models/3d-lowpoly-arrow-644bbdbf1a5c4ae7befde39a02e62c7d
+* author:	numaan.k99 (https://sketchfab.com/numaan.k99)
+
+Model License:
+* license type:	CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+* requirements:	Author must be credited. Commercial use is allowed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "3D LowPoly Arrow" (https://sketchfab.com/3d-models/3d-lowpoly-arrow-644bbdbf1a5c4ae7befde39a02e62c7d) by numaan.k99 (https://sketchfab.com/numaan.k99) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)

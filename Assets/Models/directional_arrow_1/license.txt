@@ -1,0 +1,11 @@
+Model Information:
+* title:	directional arrow_1
+* source:	https://sketchfab.com/3d-models/directional-arrow-1-9658f746810f4390bbcbc88275c40047
+* author:	Sanofer (https://sketchfab.com/sanofer.here)
+
+Model License:
+* license type:	CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+* requirements:	Author must be credited. Commercial use is allowed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "directional arrow_1" (https://sketchfab.com/3d-models/directional-arrow-1-9658f746810f4390bbcbc88275c40047) by Sanofer (https://sketchfab.com/sanofer.here) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
