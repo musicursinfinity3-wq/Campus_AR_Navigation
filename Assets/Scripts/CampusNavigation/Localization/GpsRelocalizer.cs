@@ -54,9 +54,12 @@ namespace CampusNavigation.Localization
         private float targetYawOffset;
         private bool hasTargetYaw;
 
-        // Compass stability tracking
+        // Compass stability tracking (readings compared 1.0 s apart)
         private float lastCompassHeading;
         private float compassStabilityTimer;
+        private float compassSampleTimer;
+        private bool hasCompassBaseline;
+        private const float COMPASS_SAMPLE_INTERVAL_SECONDS = 1.0f;
 
         private void Awake()
         {
@@ -108,6 +111,14 @@ namespace CampusNavigation.Localization
             if (!HasPerformedInitialSnap)
             {
                 TryPerformInitialSnap();
+                return;
+            }
+
+            // In-motion damping disabled: do not measure, store or apply any yaw target
+            if (!enableInMotionYawDamping)
+            {
+                hasTargetYaw = false;
+                windowCamPositions.Clear();
                 return;
             }
 
@@ -170,20 +181,44 @@ namespace CampusNavigation.Localization
             
             if (headingAcc < 0)
             {
-                return false; // Skip if compass reports invalid accuracy
+                // Compass reports invalid accuracy: discard any stability history
+                hasCompassBaseline = false;
+                compassStabilityTimer = 0f;
+                compassSampleTimer = 0f;
+                return false;
             }
 
-            if (Mathf.Abs(Mathf.DeltaAngle(currentHeading, lastCompassHeading)) > 10f)
+            // First valid reading only establishes the baseline
+            if (!hasCompassBaseline)
             {
-                compassStabilityTimer = 0f;
+                hasCompassBaseline = true;
                 lastCompassHeading = currentHeading;
-                return false; // Compass jittering, wait for it to settle
+                compassSampleTimer = 0f;
+                compassStabilityTimer = 0f;
+                return false;
             }
-            
+
+            compassSampleTimer += Time.deltaTime;
             compassStabilityTimer += Time.deltaTime;
-            if (compassStabilityTimer < 1.0f)
+
+            // Compare readings taken 1.0 s apart; refresh the baseline at each comparison so slow drift
+            // is measured per second instead of against a stale first reading.
+            if (compassSampleTimer >= COMPASS_SAMPLE_INTERVAL_SECONDS)
             {
-                return false; // Require 1 second of stable compass reading
+                float headingChange = Mathf.Abs(Mathf.DeltaAngle(currentHeading, lastCompassHeading));
+                lastCompassHeading = currentHeading;
+                compassSampleTimer = 0f;
+
+                if (headingChange > 10f)
+                {
+                    compassStabilityTimer = 0f;
+                    return false; // Compass jittering, wait for it to settle
+                }
+            }
+
+            if (compassStabilityTimer < COMPASS_SAMPLE_INTERVAL_SECONDS)
+            {
+                return false; // Require at least 1 second of stable compass readings
             }
 
             if (MapDataManager.Instance == null || MapDataManager.Instance.CurrentMap == null)
@@ -232,11 +267,22 @@ namespace CampusNavigation.Localization
             float currentAccuracy = AndroidSensorManager.Instance.HorizontalAccuracy;
             if (currentAccuracy > inMotionMaxAccuracyMeters)
             {
-                windowCamPositions.Clear();
+                // Poor fix: restart the whole measurement window (GPS + camera baseline), not just the camera samples
+                ResetMotionTracking();
+                return;
+            }
+
+            // First good fix after a poor one: re-baseline now instead of waiting a full displacement window
+            if (lastMotionAccuracy > inMotionMaxAccuracyMeters)
+            {
+                ResetMotionTracking();
                 return;
             }
 
             // Skip if recently precision-relocalized via QR
+            // TODO: this skip disables in-motion yaw damping entirely after any QR scan (IsRelocalized stays true
+            // until a session reset), so VIO yaw drift after the QR snap is never corrected by GPS. Revisit after
+            // outdoor walk tests (e.g. only skip for a limited time/distance after the scan).
             if (QRAnchorRelocalizer.Instance != null && QRAnchorRelocalizer.Instance.IsRelocalized)
             {
                 windowCamPositions.Clear();
@@ -328,6 +374,9 @@ namespace CampusNavigation.Localization
         {
             HasPerformedInitialSnap = false;
             hasTargetYaw = false;
+            hasCompassBaseline = false;
+            compassStabilityTimer = 0f;
+            compassSampleTimer = 0f;
             ResetMotionTracking();
             Debug.Log("[GpsRelocalizer] GPS relocalization state fully reset.");
         }

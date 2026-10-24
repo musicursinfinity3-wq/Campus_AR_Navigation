@@ -77,6 +77,12 @@ namespace CampusNavigation.Localization
         [SerializeField]
         private float maxAllowedYawDiscrepancy = 30.0f;
 
+        [Tooltip(
+            "If a blocked (suspicious) re-scan is not confirmed or dismissed within this many seconds, it is auto-dismissed so release builds (no debug overlay) cannot deadlock."
+        )]
+        [SerializeField]
+        private float pendingCorrectionTimeoutSeconds = 10.0f;
+
         [Header("Debug & Telemetry")]
         [SerializeField]
         private bool showDebugOverlay = true;
@@ -101,6 +107,11 @@ namespace CampusNavigation.Localization
         public event Action<PendingRelocalization> OnSuspiciousRelocalizationDetected;
         public event Action OnPendingRelocalizationResolved;
 
+        /// <summary>
+        /// Fired at the end of a full session reset (AR session re-init or app resume) so UI can return to its start state.
+        /// </summary>
+        public event Action OnSessionReset;
+
         // Multi-frame Accumulator State
         private class SampleBuffer
         {
@@ -118,6 +129,12 @@ namespace CampusNavigation.Localization
         
         private Dictionary<string, float> lastRelocalizedTimestamps = new Dictionary<string, float>();
         private ARSessionState previousARSessionState = ARSessionState.None;
+
+        // Time.time when the current pending (blocked) correction was created
+        private float pendingCorrectionStartTime = 0f;
+
+        // Set per-frame when a visible marker is unusable (legacy anchor or no matching node)
+        private string invalidMarkerHint = null;
 
         // Telemetry state for debug UI
 private string debugMarkerName = "None";
@@ -251,6 +268,7 @@ private string debugMarkerName = "None";
             GpsRelocalizer.Instance?.ResetRelocalizationState();
             NavigationSessionManager.Instance?.StopNavigation();
             lastRelocalizedTimestamps.Clear();
+            OnSessionReset?.Invoke();
         }
 
         private void SetScanHint(string hint)
@@ -262,23 +280,50 @@ private string debugMarkerName = "None";
             }
         }
 
-        private void Update()
+        private void ApplyDefaultScanHintIfIdle()
         {
-            // Scan guidance message when no marker is currently being tracked
             if (currentObservedImage == null)
             {
                 SetScanHint(DEFAULT_SCAN_HINT);
                 debugStatusMessage = DEFAULT_SCAN_HINT;
             }
+        }
 
-            // Skip candidate sampling while HasPendingCorrection is true (a blocked re-scan must not re-fire every 0.75 s)
+        private void Update()
+        {
+            invalidMarkerHint = null;
+
             if (HasPendingCorrection)
             {
-                return;
+                // Auto-dismiss a stale blocked re-scan so release builds (no debug overlay buttons) cannot deadlock
+                if (Time.time - pendingCorrectionStartTime >= pendingCorrectionTimeoutSeconds)
+                {
+                    Debug.LogWarning(
+                        $"[QRAnchorRelocalizer] Pending correction timed out after {pendingCorrectionTimeoutSeconds:F0}s. Auto-dismissing."
+                    );
+                    DismissPendingRelocalization();
+                }
+                else
+                {
+                    // Skip candidate sampling while HasPendingCorrection is true (a blocked re-scan must not re-fire every 0.75 s)
+                    ApplyDefaultScanHintIfIdle();
+                    return;
+                }
             }
 
             // Sample all tracked images and find the best candidate per frame
             ProcessBestImageCandidate();
+
+            // Scan guidance: a visible-but-unusable marker gets a specific message that
+            // must not be overwritten by the default hint while that marker stays visible.
+            if (invalidMarkerHint != null)
+            {
+                SetScanHint(invalidMarkerHint);
+            }
+            else
+            {
+                ApplyDefaultScanHintIfIdle();
+            }
 
             if (currentObservedImage != null && currentBuffer != null)
             {
@@ -449,6 +494,7 @@ private string debugMarkerName = "None";
             if (anchorNode == null)
             {
                 debugStatusMessage = $"Marker '{markerName}' has no matching QRAnchor node in map.";
+                invalidMarkerHint = "Unknown sign";
                 return;
             }
 
@@ -456,6 +502,7 @@ private string debugMarkerName = "None";
             {
                 debugStatusMessage =
                     $"Anchor '{anchorNode.label}' uses legacy v{anchorNode.anchorVersion} convention. Re-record required!";
+                invalidMarkerHint = "This sign needs to be re-recorded";
                 return;
             }
 
@@ -603,6 +650,7 @@ private string debugMarkerName = "None";
                     );
 
                     HasPendingCorrection = true;
+                    pendingCorrectionStartTime = Time.time;
                     PendingCorrection = new PendingRelocalization
                     {
                         anchorNode = recordedNode,

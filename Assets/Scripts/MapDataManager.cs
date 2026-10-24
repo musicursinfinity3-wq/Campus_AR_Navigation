@@ -40,6 +40,7 @@ namespace CampusNavigation.Data
             try
             {
                 string path = Path.Combine(Application.persistentDataPath, MAP_FILE_NAME);
+                mapData.savedTimestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
                 string json = JsonUtility.ToJson(mapData, true);
                 File.WriteAllText(path, json);
 #if UNITY_EDITOR
