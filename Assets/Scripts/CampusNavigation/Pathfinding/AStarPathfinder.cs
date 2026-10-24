@@ -159,8 +159,13 @@ namespace CampusNavigation.Pathfinding
                 {
                     string neighborId = edge.toNodeId;
                     if (!nodeLookup.ContainsKey(neighborId)) continue;
+                    
+                    // Exclude QRAnchor nodes from routing (Anchor-Spur Pattern)
+                    // Users should never be routed THROUGH a calibration sign.
+                    if (nodeLookup[neighborId].nodeType == NodeType.QRAnchor) continue;
+
                     if (closedSet.Contains(neighborId)) continue;
-                    if (requireAccessible && !edge.isAccessible) continue;
+if (requireAccessible && !edge.isAccessible) continue;
 
                     float tentativeGScore = gScore[currentId] + edge.distance;
 

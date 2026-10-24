@@ -1,6 +1,6 @@
 # Campus AR Navigation — Project Progress & Status
 
-**Last Updated:** 2026-03-31  
+**Last Updated:** 2026-04-01  
 **Project:** Campus AR Navigation (Benguet State University)  
 **Target Platform:** Android (Unity 6 / URP / AR Foundation 6.5)
 
@@ -9,31 +9,27 @@
 ## 1. What's Working
 - **Core AR & Sensor Foundation:**
   - AR Foundation & ARCore tracking active (`SampleScene.unity`).
-  - `AndroidSensorManager` with live hardware GPS, heading/compass, and Editor simulation fallback.
+  - `AndroidSensorManager` with high-precision `double` timestamps and Editor jittered simulation.
   - Equirectangular GPS-to-Local ENU metric projection (`GPSToLocalMeters`) and Haversine distance.
 - **Graph & Map Data Management:**
-  - Dynamic JSON load/save (`campus_map.json`) across device `persistentDataPath` and build `StreamingAssets`.
-  - Bidirectional A* pathfinding graph indexing (`AStarPathfinder.cs`).
-  - Hybrid distance calculation (`CampusMapData.CalculateNodeDistance`) seamlessly falling back between GPS and local metric 3D coordinates.
-  - Anchor versioning (`anchorVersion = 2`) with automated startup warning for legacy v0 anchors.
-- **Node Recording & Authoring Tool:**
-  - Breadcrumb recording in both hardware GPS and indoor/Editor AR tracking space (auto-drops every 3m).
-  - Multi-sample GPS averaging routine (4s duration) for landmark destination doors.
-  - Seamless session appending: auto-resumes from existing nearby nodes without dropping redundant "Start Point" duplicates.
-  - Junction linking (`LinkToNearestJunction`) and auto-intersection connecting (`autoConnectIntersections`) with safe non-zero edge weights.
-  - Strict QR anchor authoring: requires actively tracked image (`TrackingState.Tracking`); records position and outward normal heading in `MapRoot` local space; includes inverted camera-forward editor simulation.
-- **Hardened Wall-Mounted QR Relocalization (`QRAnchorRelocalizer.cs`):**
-  - **Wall-Normal Heading:** Heading computed by projecting marker outward surface normal (`transform.up`) onto horizontal plane with flat-marker fallback.
-  - **Quality Gating:** Strict filtering by `TrackingState.Tracking`, maximum distance ($\le 4\text{ m}$), and viewing incidence angle ($\le 60^\circ$ between outward normal and marker-to-camera vector).
-  - **Multi-Frame Circular Accumulator:** Buffers 0.75s of tracking (min 8 frames) averaging positions and computing circular mean & variance of headings; rejects unstable/high-spread samples.
-  - **Smooth Slerp/Lerp Re-scans:** First scan snaps immediately; subsequent re-scans smoothly interpolate over 0.5s with coroutine preemption.
-  - **Horizontal Discrepancy Gate:** Re-scans compare mapped anchor position to physical detection ($>10\text{m}$ horizontal or $>30^\circ$ yaw triggers confirmation dialog, preventing map teleportation).
-  - **ARSession Lifecycle Tracking:** Resets relocalization and pending states on session restart or tracking loss.
-  - **Responsive Telemetry Overlay & Validation:** Scalable GUI overlay showing real-time metrics (compiled out of release builds) and startup cross-validation between `CampusImageLibrary` and map anchors.
+  - Dynamic JSON load/save with `savedTimestamp` and automated StreamingAssets sync in Editor.
+  - Bidirectional A* pathfinding with **Anchor-Spur exclusion** (users are never routed through QR anchors).
+  - Hybrid distance calculation seamlessly falling back between GPS and local metric 3D coordinates.
+- **Hardened Authoring Tool (`NodeRecorder.cs`):**
+  - **Confirmation Workflow:** Replaced silent node reuse with explicit "Start from Node" / "Create New" / "Node Picker" dialogs.
+  - **Median GPS Filtering:** 25s window for landmark recording with `>= 10` distinct fixes to eliminate multipath outliers.
+  - **Edge Splitting ("Join Path"):** Real-time segment splitting to insert intersection nodes while preserving path flags.
+  - **Spur Pattern:** QR anchors automatically connect to the nearest walkway node without disrupting the breadcrumb chain.
+  - **Bootstrap Alignment:** Exempts brand-new maps from alignment guards; automatically initializes origin and MapRoot on first good fix.
+- **Hardened Relocalization (`QRAnchorRelocalizer.cs` & `GpsRelocalizer.cs`):**
+  - **Best-Candidate Hysteresis:** Per-frame sampling of all tracked images; keeps current target unless another is $0.5\text{m}$ closer.
+  - **Strict Movement Gating:** GPS yaw damping requires straight 15m walk with stable chord stability ($<15\%$ deviation) and VIO/GPS agreement ($<30\%$ error).
+  - **Lifecycle Returns:** UI automatically returns to Start/Search panels on session reset, background/resume, or navigation completion.
+  - **Cooldowns & Sync:** 12s per-anchor cooldown; QR alignment clears stale GPS in-motion targets.
 - **Visitor Experience & Wayfinding:**
-  - Step-by-step user navigation flow (`UserNavigationUI.cs`).
-  - Smooth 3D directional arrow visualizations (`ARRouteVisualizer.cs`).
-  - Coarse startup auto-alignment of `MapRoot` and runtime drift damping (`GpsRelocalizer.cs`).
+  - Label lookups from map data for active HUD.
+  - "Approximate Alignment" notice when only coarse GPS snap is active.
+  - Scan guidance ("Arm's length") provided via public property for release builds.
 
 ---
 

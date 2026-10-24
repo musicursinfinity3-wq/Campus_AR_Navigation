@@ -57,9 +57,10 @@ namespace CampusNavigation.Data
     {
         public string mapVersion = "1.0.0";
         public string campusName = "Main Campus";
+        public long savedTimestamp;     // Unix timestamp (ms) set on every save
         
         // Origin GPS point that corresponds to local (0, 0, 0)
-        public double originLatitude;
+public double originLatitude;
         public double originLongitude;
         public float originAltitude;
 

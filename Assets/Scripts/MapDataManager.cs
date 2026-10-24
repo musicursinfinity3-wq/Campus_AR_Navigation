@@ -129,8 +129,14 @@ namespace CampusNavigation.Data
             StartCoroutine(LoadFromStreamingAssetsCoroutine(onComplete));
         }
 
+        public void SetCurrentMap(CampusMapData mapData)
+        {
+            CurrentMap = mapData;
+            OnMapLoaded?.Invoke(CurrentMap);
+        }
+
         private System.Collections.IEnumerator LoadFromStreamingAssetsCoroutine(
-            Action<CampusMapData> onComplete
+Action<CampusMapData> onComplete
         )
         {
             string streamingPath = Path.Combine(Application.streamingAssetsPath, MAP_FILE_NAME);

@@ -22,9 +22,10 @@ namespace CampusNavigation.Admin
         [SerializeField] private TextMeshProUGUI statsText;
         [SerializeField] private Button bypassDestinationButton;
         [SerializeField] private Button linkJunctionButton;
+        [SerializeField] private Button joinPathButton;
 
         [Header("Managed UI Panels")]
-        [SerializeField] private GameObject startPanel;
+[SerializeField] private GameObject startPanel;
         [SerializeField] private GameObject scanPromptPanel;
         [SerializeField] private GameObject userNavPanel;
         [SerializeField] private UserNavigationUI userNavigationUI;
@@ -32,6 +33,13 @@ namespace CampusNavigation.Admin
         private GameObject previousActivePanel;
         private string pendingStatusMessage;
         private float statusMessageTimer;
+
+        // Authoring dialog state
+        private enum AdminDialogType { None, StartNodeSelection, EndNodeSelection, NodePicker, JoinPathConfirm }
+        private AdminDialogType activeDialog = AdminDialogType.None;
+        private CampusNode nearestNodeFound;
+        private float nearestNodeDist;
+        private Vector2 pickerScrollPos;
 
         private void Awake()
 {
@@ -55,6 +63,13 @@ namespace CampusNavigation.Admin
                 bypassDestinationButton.onClick.AddListener(OnBypassToDestinationClicked);
             if (linkJunctionButton != null)
                 linkJunctionButton.onClick.AddListener(OnLinkJunctionClicked);
+            if (joinPathButton != null)
+                joinPathButton.onClick.AddListener(OnJoinPathClicked);
+
+            if (recorder != null)
+            {
+                recorder.OnRecordingError += (msg) => ShowTimedStatusMessage($"<color=red>Error: {msg}</color>", 4.0f);
+            }
 
             UpdateUI();
         }
@@ -124,15 +139,179 @@ namespace CampusNavigation.Admin
 
             if (!recorder.IsRecording)
             {
-                recorder.StartRecording("BSU_Campus_Survey");
-                if (recordButtonText != null) recordButtonText.text = "Stop & Save";
+                // Find nearest node to suggest starting point
+                FindNearestNodeForDialog();
+                if (nearestNodeFound != null && nearestNodeDist < 10.0f)
+                {
+                    OpenDialog(AdminDialogType.StartNodeSelection);
+                }
+                else
+                {
+                    recorder.StartRecording();
+                    if (recordButtonText != null) recordButtonText.text = "Stop & Save";
+                }
             }
             else
             {
-                recorder.StopAndSaveRecording();
-                if (recordButtonText != null) recordButtonText.text = "Start Record";
+                // Find nearest node to suggest end link
+                FindNearestNodeForDialog();
+                if (nearestNodeFound != null && nearestNodeDist < 8.0f)
+                {
+                    OpenDialog(AdminDialogType.EndNodeSelection);
+                }
+                else
+                {
+                    recorder.StopAndSaveRecording();
+                    if (recordButtonText != null) recordButtonText.text = "Start Record";
+                }
             }
             UpdateUI();
+        }
+
+        private void OnJoinPathClicked()
+        {
+            if (recorder == null || !recorder.IsRecording) return;
+            OpenDialog(AdminDialogType.JoinPathConfirm);
+        }
+
+        private void FindNearestNodeForDialog()
+        {
+            if (MapDataManager.Instance?.CurrentMap?.nodes == null) return;
+            
+            Transform cam = Camera.main.transform;
+            Vector3 userLocalPos = recorder.transform.position; // Fallback
+            
+            // Try to use MapRoot to get accurate local position
+            GameObject mapRoot = GameObject.Find("MapRoot");
+            if (mapRoot != null)
+            {
+                userLocalPos = mapRoot.transform.InverseTransformPoint(cam.position);
+            }
+
+            nearestNodeFound = null;
+            nearestNodeDist = float.MaxValue;
+
+            foreach (var node in MapDataManager.Instance.CurrentMap.nodes)
+            {
+                float d = Vector3.Distance(userLocalPos, node.localPosition);
+                if (d < nearestNodeDist)
+                {
+                    nearestNodeDist = d;
+                    nearestNodeFound = node;
+                }
+            }
+        }
+
+        private void OpenDialog(AdminDialogType type)
+        {
+            activeDialog = type;
+            if (recorder != null) recorder.IsDialogOpen = (type != AdminDialogType.None);
+        }
+
+        private void OnGUI()
+        {
+            if (activeDialog == AdminDialogType.None) return;
+
+            float scale = Mathf.Max(1f, Screen.width / 1080f);
+            Matrix4x4 origMatrix = GUI.matrix;
+            GUI.matrix = Matrix4x4.TRS(Vector3.zero, Quaternion.identity, new Vector3(scale, scale, 1f));
+
+            float sw = Screen.width / scale;
+            float sh = Screen.height / scale;
+
+            Rect dialogRect = new Rect(sw * 0.1f, sh * 0.2f, sw * 0.8f, sh * 0.5f);
+            GUI.Box(dialogRect, "");
+            GUILayout.BeginArea(new Rect(dialogRect.x + 20, dialogRect.y + 20, dialogRect.width - 40, dialogRect.height - 40));
+
+            GUIStyle titleStyle = new GUIStyle(GUI.skin.label) { fontSize = 28, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            GUIStyle textStyle = new GUIStyle(GUI.skin.label) { fontSize = 24, alignment = TextAnchor.MiddleCenter, wordWrap = true };
+            GUIStyle btnStyle = new GUIStyle(GUI.skin.button) { fontSize = 26, fixedHeight = 80 };
+
+            switch (activeDialog)
+            {
+                case AdminDialogType.StartNodeSelection:
+                    GUILayout.Label("Start Recording", titleStyle);
+                    GUILayout.Space(20);
+                    GUILayout.Label($"Nearest node '{nearestNodeFound.label}' found at {nearestNodeDist:F1}m. Start from this node?", textStyle);
+                    GUILayout.Space(40);
+                    if (GUILayout.Button("Yes, Start from here", btnStyle))
+                    {
+                        recorder.StartRecording(nearestNodeFound.id);
+                        if (recordButtonText != null) recordButtonText.text = "Stop & Save";
+                        OpenDialog(AdminDialogType.None);
+                    }
+                    if (GUILayout.Button("No, Create New Point", btnStyle))
+                    {
+                        recorder.StartRecording();
+                        if (recordButtonText != null) recordButtonText.text = "Stop & Save";
+                        OpenDialog(AdminDialogType.None);
+                    }
+                    if (GUILayout.Button("Choose Other Node...", btnStyle))
+                    {
+                        OpenDialog(AdminDialogType.NodePicker);
+                    }
+                    if (GUILayout.Button("Cancel", btnStyle)) OpenDialog(AdminDialogType.None);
+                    break;
+
+                case AdminDialogType.EndNodeSelection:
+                    GUILayout.Label("Finish Recording", titleStyle);
+                    GUILayout.Space(20);
+                    GUILayout.Label($"Nearest node '{nearestNodeFound.label}' found at {nearestNodeDist:F1}m. Link and end here?", textStyle);
+                    GUILayout.Space(40);
+                    if (GUILayout.Button("Yes, End at this node", btnStyle))
+                    {
+                        recorder.StopAndSaveRecording(nearestNodeFound.id);
+                        if (recordButtonText != null) recordButtonText.text = "Start Record";
+                        OpenDialog(AdminDialogType.None);
+                    }
+                    if (GUILayout.Button("No, End at current", btnStyle))
+                    {
+                        recorder.StopAndSaveRecording();
+                        if (recordButtonText != null) recordButtonText.text = "Start Record";
+                        OpenDialog(AdminDialogType.None);
+                    }
+                    if (GUILayout.Button("Cancel", btnStyle)) OpenDialog(AdminDialogType.None);
+                    break;
+
+                case AdminDialogType.NodePicker:
+                    GUILayout.Label("Select Start Node", titleStyle);
+                    pickerScrollPos = GUILayout.BeginScrollView(pickerScrollPos);
+                    foreach (var node in MapDataManager.Instance.CurrentMap.nodes)
+                    {
+                        if (GUILayout.Button($"{node.label} ({node.id})", btnStyle))
+                        {
+                            recorder.StartRecording(node.id);
+                            if (recordButtonText != null) recordButtonText.text = "Stop & Save";
+                            OpenDialog(AdminDialogType.None);
+                        }
+                    }
+                    GUILayout.EndScrollView();
+                    if (GUILayout.Button("Back", btnStyle)) OpenDialog(AdminDialogType.StartNodeSelection);
+                    break;
+
+                case AdminDialogType.JoinPathConfirm:
+                    GUILayout.Label("Join Existing Path", titleStyle);
+                    GUILayout.Space(20);
+                    GUILayout.Label("Split the nearest edge and connect current recording here?", textStyle);
+                    GUILayout.Space(40);
+                    if (GUILayout.Button("Yes, Join Path", btnStyle))
+                    {
+                        if (recorder.SplitNearestEdge())
+                        {
+                            ShowTimedStatusMessage("<color=green>Path Joined Successfully!</color>", 3.0f);
+                        }
+                        else
+                        {
+                            ShowTimedStatusMessage("<color=yellow>No edge found nearby to join.</color>", 3.0f);
+                        }
+                        OpenDialog(AdminDialogType.None);
+                    }
+                    if (GUILayout.Button("Cancel", btnStyle)) OpenDialog(AdminDialogType.None);
+                    break;
+            }
+
+            GUILayout.EndArea();
+            GUI.matrix = origMatrix;
         }
 
         private void OnMarkDestinationClicked()

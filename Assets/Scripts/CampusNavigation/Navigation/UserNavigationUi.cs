@@ -124,10 +124,16 @@ namespace CampusNavigation.Navigation
             {
                 sessionManager.OnNavigationFailed += ShowFeedbackMessage;
                 sessionManager.OnDestinationReached += OnReachedDestination;
+                sessionManager.OnNavigationEnded += HandleNavigationEnded;
+            }
+
+            if (relocalizer != null)
+            {
+                relocalizer.OnScanHintChanged += UpdateScanHintUI;
             }
 
             if (pathfinder != null)
-            {
+{
                 pathfinder.OnGraphInitialized += HandleGraphReady;
                 if (
                     pathfinder.IsGraphReady
@@ -175,6 +181,34 @@ namespace CampusNavigation.Navigation
             }
         }
 
+        private void HandleNavigationEnded()
+        {
+            // When navigation is canceled or finished, return to search if aligned, otherwise start
+            if ((relocalizer != null && relocalizer.IsRelocalized) || 
+                (GpsRelocalizer.Instance != null && GpsRelocalizer.Instance.HasPerformedInitialSnap))
+            {
+                ShowSearchPanel();
+            }
+            else
+            {
+                ShowStartPanel();
+            }
+        }
+
+        private void UpdateScanHintUI(string hint)
+        {
+            // If the ScanPromptPanel is active, show the hint
+            if (scanPromptPanel != null && scanPromptPanel.activeSelf)
+            {
+                // Find or update the hint text on the panel
+                TextMeshProUGUI hintText = scanPromptPanel.GetComponentInChildren<TextMeshProUGUI>();
+                if (hintText != null)
+                {
+                    hintText.text = hint;
+                }
+            }
+        }
+
         private void Update()
         {
             if (sessionManager != null && sessionManager.IsNavigating)
@@ -182,6 +216,26 @@ namespace CampusNavigation.Navigation
                 if (distanceText != null)
                 {
                     distanceText.text = $"{sessionManager.RemainingDistance:F1} m";
+                }
+            }
+
+            // Show "Approximate Alignment" notice when only GPS has snapped
+            if (anchorStatusText != null)
+            {
+                bool isPrecision = relocalizer != null && relocalizer.IsRelocalized;
+                bool isCoarse = GpsRelocalizer.Instance != null && GpsRelocalizer.Instance.HasPerformedInitialSnap;
+                
+                if (isPrecision)
+                {
+                    // Label set in OnQRAnchorScanned
+                }
+                else if (isCoarse)
+                {
+                    anchorStatusText.text = "<color=yellow>! Approximate GPS Alignment</color>";
+                }
+                else
+                {
+                    anchorStatusText.text = "Waiting for alignment...";
                 }
             }
         }
@@ -281,18 +335,25 @@ namespace CampusNavigation.Navigation
         /// </summary>
         private void OnQRAnchorScanned(string anchorNodeId)
         {
-            Debug.Log(
-                $"[UserNavigationUI] QR Anchor verified ({anchorNodeId}). Unlocking destinations!"
-            );
+            CampusNode anchorNode = MapDataManager.Instance?.CurrentMap?.nodes.Find(n => n.id == anchorNodeId);
+            string label = anchorNode != null ? anchorNode.label : "QR Anchor";
 
-            // Haptic vibration feedback on Android
+            Debug.Log($"[UserNavigationUI] QR Anchor verified: {label}.");
+
 #if UNITY_ANDROID && !UNITY_EDITOR
             Handheld.Vibrate();
 #endif
 
             if (anchorStatusText != null)
             {
-                anchorStatusText.text = "✓ Location Verified: Campus Entrance";
+                anchorStatusText.text = $"✓ Location Verified: {label}";
+            }
+
+            // Do not interrupt active navigation with the search panel
+            if (sessionManager != null && sessionManager.IsNavigating)
+            {
+                ShowFeedbackMessage($"Resynchronized to {label}");
+                return;
             }
 
             // Move to Phase 3: Show destination selection

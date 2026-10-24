@@ -64,6 +64,22 @@ This file logs key architectural decisions, rationale ("Why"), and constraints. 
 
 ---
 
-### 2026-03-30: Discarding GPS Altitude in Favor of Ground Clamping
-- **Decision:** Vertical GPS altitude is discarded for breadcrumbs and navigation paths; waypoints are clamped to ground/eye-offset (`-1.4m`).
-- **Why:** GPS vertical accuracy is notoriously noisy (often ±15–30m error), which would cause AR breadcrumbs to float in the sky or bury deep underground.
+---
+
+### 2026-04-01: Anchor-Spur Pattern for QR Calibration
+- **Decision:** QR Anchor nodes must be recorded as "spur" nodes that connect to the nearest non-anchor (walkway) node. A* pathfinding must never route users through a QR Anchor node.
+- **Why:** Calibration markers are often off the main walking path (e.g., mounted on a building pillar). Routing the user directly onto the physical sign causes navigation confusion and redundant turns. The spur pattern allows the map to snap to the anchor's ground truth while keeping the navigation route on the actual sidewalk.
+
+---
+
+### 2026-04-01: GPS Yaw Stability chord-based Rejection
+- **Decision:** In-motion yaw corrections from GPS are rejected if the maximum perpendicular distance from any intermediate camera position to the start-end chord exceeds 15% of the chord length, or if VIO distance vs. GPS distance differs by > 30%.
+- **Why:** Drift damping requires the user to walk in a roughly straight line to determine a reliable heading. If the user turns or weaves during the 15m movement window, the calculated bearing is invalid. The chord rejection ensures only stable walking windows contribute to yaw alignment.
+
+---
+
+---
+
+### 2026-04-01: Map Deletion and Bundled Fallback
+- **Decision:** The "Clear Map" function in the Admin UI deletes the user's persistent data file. On the next application restart, the system automatically falls back to the read-only bundled map stored in `StreamingAssets`.
+- **Why:** To ensure the app is never in a broken state without a map. If an admin makes a mistake during survey, deleting the save allows them to revert to the factory-shipped campus map immediately.
