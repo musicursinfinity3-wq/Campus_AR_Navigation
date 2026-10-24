@@ -954,15 +954,35 @@ return nearest;
                     return true;
                 }
 
-                // Otherwise insert Intersection node
+                // Otherwise insert Intersection node — interpolate lat/lon along the edge
+                double latA = nodeA.latitude, lonA = nodeA.longitude;
+                double latB = nodeB.latitude, lonB = nodeB.longitude;
+                bool hasGpsA = Math.Abs(latA) > 0.0001 && Math.Abs(lonA) > 0.0001;
+                bool hasGpsB = Math.Abs(latB) > 0.0001 && Math.Abs(lonB) > 0.0001;
+                double splitLat, splitLon;
+                if (hasGpsA && hasGpsB)
+                {
+                    float frac = segmentLen > 0.01f ? bestT / segmentLen : 0.5f;
+                    splitLat = latA + (latB - latA) * frac;
+                    splitLon = lonA + (lonB - lonA) * frac;
+                }
+                else if (hasGpsA || hasGpsB)
+                {
+                    splitLat = hasGpsA ? latA : latB;
+                    splitLon = hasGpsA ? lonA : lonB;
+                }
+                else
+                {
+                    splitLat = 0; splitLon = 0;
+                }
                 CampusNode intersection = new CampusNode
                 {
                     id = NextNodeId(),
                     label = "Intersection",
                     nodeType = NodeType.Intersection,
                     localPosition = splitPoint,
-                    latitude = AndroidSensorManager.Instance != null ? AndroidSensorManager.Instance.CurrentLatitude : 0,
-                    longitude = AndroidSensorManager.Instance != null ? AndroidSensorManager.Instance.CurrentLongitude : 0,
+                    latitude = splitLat,
+                    longitude = splitLon,
                     recordedTimestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
                 };
                 currentRecordedMap.nodes.Add(intersection);

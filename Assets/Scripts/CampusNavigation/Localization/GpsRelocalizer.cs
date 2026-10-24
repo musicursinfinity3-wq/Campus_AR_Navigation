@@ -247,7 +247,7 @@ namespace CampusNavigation.Localization
             double currLon = AndroidSensorManager.Instance.CurrentLongitude;
 
             float gpsDist = CampusMapData.CalculateDistanceMeters(lastMotionLat, lastMotionLon, currLat, currLon);
-            float minRequired = Mathf.Max(minMotionDisplacementMeters, Mathf.Max(15f, 3f * currentAccuracy));
+            float minRequired = Mathf.Max(15f, 3f * currentAccuracy);
 
             if (gpsDist >= minRequired)
 {
@@ -288,7 +288,8 @@ namespace CampusNavigation.Localization
                         Vector3 chordStart = new Vector3(lastMotionCamPos.x, 0f, lastMotionCamPos.z);
                         Vector3 chordEnd = new Vector3(arCameraTransform.position.x, 0f, arCameraTransform.position.z);
                         Vector3 chordDir = (chordEnd - chordStart).normalized;
-                        
+                        float chordLength = Vector3.Distance(chordStart, chordEnd);
+
                         foreach (var pos in windowCamPositions)
                         {
                             Vector3 planarPos = new Vector3(pos.x, 0f, pos.z);
@@ -297,7 +298,7 @@ namespace CampusNavigation.Localization
                             maxLateralDev = Mathf.Max(maxLateralDev, lateral.magnitude);
                         }
 
-                        if (maxLateralDev > 0.15f * gpsDist)
+                        if (chordLength > 0.1f && maxLateralDev > 0.15f * chordLength)
                         {
                             ResetMotionTracking();
                             return;
@@ -308,14 +309,10 @@ namespace CampusNavigation.Localization
                     {
                         float gpsAngle = Mathf.Atan2(gpsDir.x, gpsDir.z) * Mathf.Rad2Deg;
                         float vioAngle = Mathf.Atan2(vioDir.x, vioDir.z) * Mathf.Rad2Deg;
-                        
-                        // Absolute MapRoot Yaw Calculation: measuredYaw = vioAngle - gpsAngle
-                        float measuredYaw = Mathf.DeltaAngle(gpsAngle, vioAngle);
-                        
-                        // Blend yaw correction (apply 50% fraction of measured delta to avoid overcorrecting single windows)
-                        float currentMapRootYaw = mapRoot != null ? mapRoot.eulerAngles.y : 0f;
-                        float deltaToTarget = Mathf.DeltaAngle(currentMapRootYaw, measuredYaw);
-                        targetYawOffset = currentMapRootYaw + (deltaToTarget * 0.5f);
+
+                        // Absolute yaw: PLAN 2.3 targetMapRootYaw = vioAngle - gpsAngle, clamped only by maxYawRate in Update
+                        float targetYaw = Mathf.DeltaAngle(gpsAngle, vioAngle);
+                        targetYawOffset = targetYaw;
                         hasTargetYaw = true;
                     }
                 }

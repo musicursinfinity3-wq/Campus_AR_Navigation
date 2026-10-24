@@ -33,8 +33,7 @@ namespace CampusNavigation.Admin
         [SerializeField] private UserNavigationUI userNavigationUI;
 
         private GameObject previousActivePanel;
-        private string pendingStatusMessage;
-        private float statusMessageTimer;
+        private Coroutine statusMessageRoutine;
         private Camera cachedMainCamera;
 
         // Authoring dialog state
@@ -108,16 +107,7 @@ recorder = NodeRecorder.Instance != null ? NodeRecorder.Instance : FindFirstObje
 
         private void Update()
         {
-            // If a temporary status message is active, update timer and preserve it
-            if (statusMessageTimer > 0)
-            {
-                statusMessageTimer -= Time.deltaTime;
-                if (statsText != null)
-                {
-                    statsText.text = pendingStatusMessage;
-                }
-                return;
-            }
+            if (statusMessageRoutine != null) return;
 
             if (recorder != null && recorder.IsRecording && statsText != null)
             {
@@ -349,12 +339,15 @@ recorder = NodeRecorder.Instance != null ? NodeRecorder.Instance : FindFirstObje
 
         private void ShowTimedStatusMessage(string message, float duration)
         {
-            pendingStatusMessage = message;
-            statusMessageTimer = duration;
-            if (statsText != null)
-            {
-                statsText.text = message;
-            }
+            if (statusMessageRoutine != null) StopCoroutine(statusMessageRoutine);
+            statusMessageRoutine = StartCoroutine(StatusMessageRoutine(message, duration));
+        }
+
+        private System.Collections.IEnumerator StatusMessageRoutine(string message, float duration)
+        {
+            if (statsText != null) statsText.text = message;
+            yield return new WaitForSeconds(duration);
+            statusMessageRoutine = null;
         }
 
         private void UpdateUI()
