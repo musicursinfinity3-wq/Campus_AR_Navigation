@@ -85,9 +85,18 @@ namespace CampusNavigation.Navigation
         private TextMeshProUGUI officeHoursText;
 
         private List<CampusNode> availableDestinations = new List<CampusNode>();
+        private TextMeshProUGUI cachedScanHintText;
+
+        private void Awake()
+        {
+            if (scanPromptPanel != null)
+            {
+                cachedScanHintText = scanPromptPanel.GetComponentInChildren<TextMeshProUGUI>();
+            }
+        }
 
         private void Start()
-        {
+{
             if (sessionManager == null)
                 sessionManager = NavigationSessionManager.Instance;
             if (pathfinder == null)
@@ -197,15 +206,9 @@ namespace CampusNavigation.Navigation
 
         private void UpdateScanHintUI(string hint)
         {
-            // If the ScanPromptPanel is active, show the hint
-            if (scanPromptPanel != null && scanPromptPanel.activeSelf)
+            if (cachedScanHintText != null)
             {
-                // Find or update the hint text on the panel
-                TextMeshProUGUI hintText = scanPromptPanel.GetComponentInChildren<TextMeshProUGUI>();
-                if (hintText != null)
-                {
-                    hintText.text = hint;
-                }
+                cachedScanHintText.text = hint;
             }
         }
 
@@ -219,26 +222,25 @@ namespace CampusNavigation.Navigation
                 }
             }
 
-            // Show "Approximate Alignment" notice when only GPS has snapped
+            // Show "Approximate Alignment" notice ONLY when not precision relocalized
             if (anchorStatusText != null)
             {
                 bool isPrecision = relocalizer != null && relocalizer.IsRelocalized;
                 bool isCoarse = GpsRelocalizer.Instance != null && GpsRelocalizer.Instance.HasPerformedInitialSnap;
                 
-                if (isPrecision)
+                if (!isPrecision)
                 {
-                    // Label set in OnQRAnchorScanned
-                }
-                else if (isCoarse)
-                {
-                    anchorStatusText.text = "<color=yellow>! Approximate GPS Alignment</color>";
-                }
-                else
-                {
-                    anchorStatusText.text = "Waiting for alignment...";
+                    if (isCoarse)
+                    {
+                        anchorStatusText.text = "<color=yellow>! Approximate GPS Alignment</color>";
+                    }
+                    else
+                    {
+                        anchorStatusText.text = "Waiting for alignment...";
+                    }
                 }
             }
-        }
+}
 
         // ================= FLOW CONTROLLERS =================
         /// <summary>

@@ -86,8 +86,8 @@ namespace CampusNavigation.Data
                     Debug.Log($"[MapDataManager] Deleted map file at: {path}");
                 }
 
-                CurrentMap = new CampusMapData();
-                OnMapLoaded?.Invoke(CurrentMap);
+                // Immediately revert to bundled map in memory
+                LoadMap();
                 return true;
             }
             catch (Exception ex)
@@ -95,6 +95,14 @@ namespace CampusNavigation.Data
                 Debug.LogError($"[MapDataManager] Failed to delete map: {ex.Message}");
                 return false;
             }
+        }
+
+        /// <summary>
+        /// Deletes the persistent map and reloads the bundled one from StreamingAssets.
+        /// </summary>
+        public void ResetToBundledMap()
+        {
+            DeleteSavedMap();
         }
 
         /// <summary>

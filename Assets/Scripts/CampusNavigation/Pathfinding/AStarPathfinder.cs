@@ -206,7 +206,7 @@ if (requireAccessible && !edge.isAccessible) continue;
                     continue;
 
                 // Compare MapRoot-Local to MapRoot-Local
-float distSqr = (node.localPosition - localPosition).sqrMagnitude;
+                float distSqr = (node.localPosition - localPosition).sqrMagnitude;
                 if (distSqr < minDistanceSqr)
                 {
                     minDistanceSqr = distSqr;

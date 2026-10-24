@@ -193,21 +193,41 @@ namespace CampusNavigation.Admin
         private IEnumerator BootstrapFreshMapRoutine()
         {
             Debug.Log("[NodeRecorder] Waiting for high-accuracy GPS fix to bootstrap fresh map...");
+            float timeout = 60f;
+            float elapsed = 0f;
             
-            while (AndroidSensorManager.Instance.HorizontalAccuracy > maxAllowedAccuracyMeters)
+            while (elapsed < timeout)
             {
+                if (AndroidSensorManager.Instance != null && AndroidSensorManager.Instance.Status == SensorStatus.Ready)
+                {
+                    if (AndroidSensorManager.Instance.HorizontalAccuracy <= maxAllowedAccuracyMeters)
+                    {
+                        // Check compass stability
+                        float heading = AndroidSensorManager.Instance.CurrentHeading;
+                        yield return new WaitForSeconds(1f);
+                        elapsed += 1f;
+                        
+                        if (Mathf.Abs(Mathf.DeltaAngle(heading, AndroidSensorManager.Instance.CurrentHeading)) <= 10f)
+                        {
+                            // Success!
+                            BootstrapFinish();
+                            yield break;
+                        }
+                        Debug.LogWarning("[NodeRecorder] Compass unstable, continuing wait...");
+                        continue;
+                    }
+                }
+                
                 yield return new WaitForSeconds(1f);
+                elapsed += 1f;
             }
 
-            // Require stable compass
-            float heading = AndroidSensorManager.Instance.CurrentHeading;
-            yield return new WaitForSeconds(1f);
-            if (Mathf.Abs(Mathf.DeltaAngle(heading, AndroidSensorManager.Instance.CurrentHeading)) > 10f)
-            {
-                Debug.LogWarning("[NodeRecorder] Compass unstable, retrying bootstrap...");
-                StartCoroutine(BootstrapFreshMapRoutine());
-                yield break;
-            }
+            OnRecordingError?.Invoke("GPS timeout — move outdoors");
+        }
+
+        private void BootstrapFinish()
+        {
+            if (AndroidSensorManager.Instance == null || currentRecordedMap == null) return;
 
             // 1. Set origin
             currentRecordedMap.originLatitude = AndroidSensorManager.Instance.CurrentLatitude;
@@ -465,10 +485,13 @@ namespace CampusNavigation.Admin
             
             if (nearest != null)
             {
-                float dist = Vector3.Distance(newNode.localPosition, nearest.localPosition);
+                float dx = newNode.localPosition.x - nearest.localPosition.x;
+                float dz = newNode.localPosition.z - nearest.localPosition.z;
+                float dist = Mathf.Sqrt(dx * dx + dz * dz);
+                
                 CampusEdge edge = new CampusEdge
                 {
-                    id = $"edge_{newNode.id}_{nearest.id}",
+id = $"edge_{newNode.id}_{nearest.id}",
                     fromNodeId = newNode.id,
                     toNodeId = nearest.id,
                     distance = Mathf.Max(0.1f, dist),
@@ -494,14 +517,18 @@ namespace CampusNavigation.Admin
             foreach (var node in currentRecordedMap.nodes)
             {
                 if (node.nodeType == NodeType.QRAnchor) continue;
-                float d = Vector3.Distance(localPos, node.localPosition);
-                if (d < minDist)
+                
+                float dx = localPos.x - node.localPosition.x;
+                float dz = localPos.z - node.localPosition.z;
+                float dSqr = dx * dx + dz * dz;
+                
+                if (dSqr < minDist)
                 {
-                    minDist = d;
+                    minDist = dSqr;
                     nearest = node;
                 }
             }
-            return nearest;
+return nearest;
         }
 
         /// <summary>
@@ -640,6 +667,13 @@ namespace CampusNavigation.Admin
             float elapsed = 0f;
             while (elapsed < sampleDuration)
             {
+                // Pause sampling if a dialog is open (if required by PLAN 6.2)
+                if (IsDialogOpen)
+                {
+                    yield return new WaitForSeconds(0.5f);
+                    continue;
+                }
+
                 if (AndroidSensorManager.Instance != null && AndroidSensorManager.Instance.IsGpsRunning)
                 {
                     double ts = AndroidSensorManager.Instance.LastFixTimestamp;
@@ -692,8 +726,19 @@ namespace CampusNavigation.Admin
 
             if (!string.IsNullOrEmpty(linkToAnchorId))
             {
+                CampusNode anchor = currentRecordedMap.nodes.Find(n => n.id == linkToAnchorId);
+                if (anchor == null)
+                {
+                    OnRecordingError?.Invoke("Anchor not found");
+                    yield break;
+                }
+
                 currentRecordedMap.nodes.Add(newNode);
-                float d = Vector3.Distance(newNode.localPosition, currentRecordedMap.nodes.Find(n => n.id == linkToAnchorId).localPosition);
+                
+                float dx = newNode.localPosition.x - anchor.localPosition.x;
+                float dz = newNode.localPosition.z - anchor.localPosition.z;
+                float d = Mathf.Sqrt(dx * dx + dz * dz);
+                
                 CampusEdge edge = new CampusEdge {
                     id = $"edge_{newNode.id}_{linkToAnchorId}",
                     fromNodeId = newNode.id,
@@ -733,18 +778,16 @@ namespace CampusNavigation.Admin
             // Connect to previous breadcrumb node
             if (lastRecordedNode != null)
             {
-                float dist = CampusMapData.CalculateNodeDistance(lastRecordedNode, newNode);
-                if (dist < 0.1f)
-                {
-                    dist = 0.1f;
-                }
+                float dx = newNode.localPosition.x - lastRecordedNode.localPosition.x;
+                float dz = newNode.localPosition.z - lastRecordedNode.localPosition.z;
+                float dist = Mathf.Sqrt(dx * dx + dz * dz);
 
                 CampusEdge edge = new CampusEdge
                 {
                     id = $"edge_{lastRecordedNode.id}_{newNode.id}",
                     fromNodeId = lastRecordedNode.id,
                     toNodeId = newNode.id,
-                    distance = dist,
+                    distance = Mathf.Max(0.1f, dist),
                     isAccessible = true,
                     isStairs = false,
                 };
@@ -838,12 +881,14 @@ namespace CampusNavigation.Admin
         public bool SplitNearestEdge()
         {
             if (!IsRecording || lastRecordedNode == null) return false;
+            if (arCameraTransform == null || mapRoot == null) return false;
 
-            Vector3 userLocalPos = mapRoot != null ? mapRoot.InverseTransformPoint(arCameraTransform.position) : arCameraTransform.position;
+            Vector3 userLocalPos = mapRoot.InverseTransformPoint(arCameraTransform.position);
             
             CampusEdge bestEdge = null;
             float minPerpDist = float.MaxValue;
             Vector3 splitPoint = Vector3.zero;
+            float bestT = 0f;
 
             foreach (var edge in currentRecordedMap.edges)
             {
@@ -851,66 +896,94 @@ namespace CampusNavigation.Admin
                 CampusNode b = currentRecordedMap.nodes.Find(n => n.id == edge.toNodeId);
                 if (a == null || b == null) continue;
 
-                Vector3 pA = a.localPosition;
-                Vector3 pB = b.localPosition;
+                // Horizontal projection for chord logic
+                Vector3 pA = new Vector3(a.localPosition.x, 0f, a.localPosition.z);
+                Vector3 pB = new Vector3(b.localPosition.x, 0f, b.localPosition.z);
+                Vector3 pUser = new Vector3(userLocalPos.x, 0f, userLocalPos.z);
                 
-                // Perpendicular distance to segment
                 Vector3 line = pB - pA;
                 float len = line.magnitude;
-                Vector3 dir = line.normalized;
-                Vector3 v = userLocalPos - pA;
+                if (len < 0.1f) continue;
+                Vector3 dir = line / len;
+                Vector3 v = pUser - pA;
                 float t = Vector3.Dot(v, dir);
                 t = Mathf.Clamp(t, 0, len);
                 Vector3 proj = pA + dir * t;
-                float d = Vector3.Distance(userLocalPos, proj);
+                float d = Vector3.Distance(pUser, proj);
 
                 if (d < minPerpDist && d < 5.0f) // Within 5m of edge
                 {
                     minPerpDist = d;
                     bestEdge = edge;
-                    splitPoint = proj;
-                    
-                    // If within 3m of an endpoint, just link to it instead of splitting
-                    if (t < 3.0f) { /* Link to A logic */ }
-                    else if (len - t < 3.0f) { /* Link to B logic */ }
+                    bestT = t;
+                    // Reconstruct 3D split point by lerping original localPositions
+                    splitPoint = Vector3.Lerp(a.localPosition, b.localPosition, t / len);
                 }
             }
 
             if (bestEdge != null)
             {
-                // Logic for SplitNearestEdge... (implement details in Step 5.8)
-                // Actually I should implement it fully now.
-                
                 CampusNode nodeA = currentRecordedMap.nodes.Find(n => n.id == bestEdge.fromNodeId);
                 CampusNode nodeB = currentRecordedMap.nodes.Find(n => n.id == bestEdge.toNodeId);
                 
-                // Insert Intersection node
+                // Endpoint reuse per PLAN 5.8
+                CampusNode targetNode = null;
+                float segmentLen = Vector3.Distance(new Vector3(nodeA.localPosition.x, 0f, nodeA.localPosition.z), 
+                                                   new Vector3(nodeB.localPosition.x, 0f, nodeB.localPosition.z));
+                
+                if (bestT < 3.0f) targetNode = nodeA;
+                else if (segmentLen - bestT < 3.0f) targetNode = nodeB;
+
+                if (targetNode != null)
+                {
+                    float dx = lastRecordedNode.localPosition.x - targetNode.localPosition.x;
+                    float dz = lastRecordedNode.localPosition.z - targetNode.localPosition.z;
+                    float dist = Mathf.Sqrt(dx * dx + dz * dz);
+                    
+                    CampusEdge edge = new CampusEdge {
+                        id = $"edge_{lastRecordedNode.id}_{targetNode.id}_{DateTime.Now.Ticks}",
+                        fromNodeId = lastRecordedNode.id,
+                        toNodeId = targetNode.id,
+                        distance = Mathf.Max(0.1f, dist),
+                        isAccessible = true
+                    };
+                    currentRecordedMap.edges.Add(edge);
+                    lastRecordedNode = targetNode;
+                    OnEdgeRecorded?.Invoke(edge);
+                    Debug.Log($"[NodeRecorder] Reused endpoint {targetNode.id} instead of splitting.");
+                    return true;
+                }
+
+                // Otherwise insert Intersection node
                 CampusNode intersection = new CampusNode
                 {
                     id = NextNodeId(),
                     label = "Intersection",
                     nodeType = NodeType.Intersection,
                     localPosition = splitPoint,
-                    latitude = AndroidSensorManager.Instance.CurrentLatitude,
-                    longitude = AndroidSensorManager.Instance.CurrentLongitude,
+                    latitude = AndroidSensorManager.Instance != null ? AndroidSensorManager.Instance.CurrentLatitude : 0,
+                    longitude = AndroidSensorManager.Instance != null ? AndroidSensorManager.Instance.CurrentLongitude : 0,
                     recordedTimestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
                 };
                 currentRecordedMap.nodes.Add(intersection);
 
-                // Create new edges
+                // Create new edges with unique IDs
+                string timestamp = DateTime.Now.Ticks.ToString();
                 CampusEdge edgeAI = new CampusEdge {
-                    id = $"edge_{nodeA.id}_{intersection.id}",
+                    id = $"edge_{nodeA.id}_{intersection.id}_{timestamp}",
                     fromNodeId = nodeA.id,
                     toNodeId = intersection.id,
-                    distance = Vector3.Distance(nodeA.localPosition, splitPoint),
+                    distance = Vector3.Distance(new Vector3(nodeA.localPosition.x, 0, nodeA.localPosition.z), 
+                                               new Vector3(splitPoint.x, 0, splitPoint.z)),
                     isAccessible = bestEdge.isAccessible,
                     isStairs = bestEdge.isStairs
                 };
                 CampusEdge edgeIB = new CampusEdge {
-                    id = $"edge_{intersection.id}_{nodeB.id}",
+                    id = $"edge_{intersection.id}_{nodeB.id}_{timestamp}",
                     fromNodeId = intersection.id,
                     toNodeId = nodeB.id,
-                    distance = Vector3.Distance(splitPoint, nodeB.localPosition),
+                    distance = Vector3.Distance(new Vector3(splitPoint.x, 0, splitPoint.z), 
+                                               new Vector3(nodeB.localPosition.x, 0, nodeB.localPosition.z)),
                     isAccessible = bestEdge.isAccessible,
                     isStairs = bestEdge.isStairs
                 };
@@ -920,11 +993,13 @@ namespace CampusNavigation.Admin
                 currentRecordedMap.edges.Add(edgeIB);
                 
                 // Connect current recording to new junction
+                float rdx = lastRecordedNode.localPosition.x - splitPoint.x;
+                float rdz = lastRecordedNode.localPosition.z - splitPoint.z;
                 CampusEdge recordingLink = new CampusEdge {
-                    id = $"edge_{lastRecordedNode.id}_{intersection.id}",
+                    id = $"edge_{lastRecordedNode.id}_{intersection.id}_{timestamp}",
                     fromNodeId = lastRecordedNode.id,
                     toNodeId = intersection.id,
-                    distance = Vector3.Distance(lastRecordedNode.localPosition, splitPoint),
+                    distance = Mathf.Max(0.1f, Mathf.Sqrt(rdx * rdx + rdz * rdz)),
                     isAccessible = true
                 };
                 currentRecordedMap.edges.Add(recordingLink);
@@ -942,8 +1017,27 @@ namespace CampusNavigation.Admin
             return false;
         }
 
-        private void SpawnDebugMarker(Vector3 worldPos)
+        public void ClearRecordedMap()
         {
+            if (currentRecordedMap != null)
+            {
+                currentRecordedMap.nodes.Clear();
+                currentRecordedMap.edges.Clear();
+            }
+            lastRecordedNode = null;
+            ClearDebugMarkers();
+
+            if (MapDataManager.Instance != null && currentRecordedMap != null)
+            {
+                MapDataManager.Instance.SaveMapToPersistentData(currentRecordedMap);
+            }
+
+            Debug.Log("[NodeRecorder] Recorded map cleared.");
+            OnRecordingStateChanged?.Invoke();
+        }
+
+        private void SpawnDebugMarker(Vector3 worldPos)
+{
             if (nodeDebugMarkerPrefab == null)
                 return;
             GameObject marker = Instantiate(nodeDebugMarkerPrefab, worldPos, Quaternion.identity);

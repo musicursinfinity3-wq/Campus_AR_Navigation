@@ -11,9 +11,11 @@ namespace CampusNavigation.Admin
     {
         [Header("Dependencies")]
         [SerializeField] private NodeRecorder recorder;
+        [SerializeField] private Transform mapRoot;
+        [SerializeField] private Transform arCameraTransform;
 
         [Header("UI Controls")]
-        [SerializeField] private Button clearMapButton;
+[SerializeField] private Button clearMapButton;
         [SerializeField] private GameObject adminPanel;
         [SerializeField] private Button recordButton;
         [SerializeField] private TextMeshProUGUI recordButtonText;
@@ -33,9 +35,10 @@ namespace CampusNavigation.Admin
         private GameObject previousActivePanel;
         private string pendingStatusMessage;
         private float statusMessageTimer;
+        private Camera cachedMainCamera;
 
         // Authoring dialog state
-        private enum AdminDialogType { None, StartNodeSelection, EndNodeSelection, NodePicker, JoinPathConfirm }
+private enum AdminDialogType { None, StartNodeSelection, EndNodeSelection, NodePicker, JoinPathConfirm }
         private AdminDialogType activeDialog = AdminDialogType.None;
         private CampusNode nearestNodeFound;
         private float nearestNodeDist;
@@ -49,9 +52,10 @@ namespace CampusNavigation.Admin
         private void Start()
         {
             AutoAssignPanels();
+            cachedMainCamera = Camera.main;
 
             if (recorder == null)
-                recorder = NodeRecorder.Instance != null ? NodeRecorder.Instance : FindFirstObjectByType<NodeRecorder>();
+recorder = NodeRecorder.Instance != null ? NodeRecorder.Instance : FindFirstObjectByType<NodeRecorder>();
 
             if (clearMapButton != null)
                 clearMapButton.onClick.AddListener(OnClearMapClicked);
@@ -178,15 +182,10 @@ namespace CampusNavigation.Admin
         {
             if (MapDataManager.Instance?.CurrentMap?.nodes == null) return;
             
-            Transform cam = Camera.main.transform;
-            Vector3 userLocalPos = recorder.transform.position; // Fallback
-            
-            // Try to use MapRoot to get accurate local position
-            GameObject mapRoot = GameObject.Find("MapRoot");
-            if (mapRoot != null)
-            {
-                userLocalPos = mapRoot.transform.InverseTransformPoint(cam.position);
-            }
+            Transform cam = arCameraTransform != null ? arCameraTransform : (cachedMainCamera != null ? cachedMainCamera.transform : null);
+            if (cam == null || mapRoot == null) return;
+
+            Vector3 userLocalPos = mapRoot.InverseTransformPoint(cam.position);
 
             nearestNodeFound = null;
             nearestNodeDist = float.MaxValue;
@@ -316,7 +315,7 @@ namespace CampusNavigation.Admin
 
         private void OnMarkDestinationClicked()
         {
-            if (recorder == null || !recorder.IsRecording || recorder.IsSampling) return;
+            if (recorder == null || !recorder.IsRecording || recorder.IsSampling || recorder.IsDialogOpen) return;
 
             string destName = destinationInputField != null && !string.IsNullOrEmpty(destinationInputField.text)
                 ? destinationInputField.text
