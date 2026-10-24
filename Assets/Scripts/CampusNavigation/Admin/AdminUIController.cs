@@ -1,3 +1,4 @@
+using System;
 using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
@@ -36,6 +37,10 @@ namespace CampusNavigation.Admin
         private string pendingStatusMessage;
         private float statusMessageTimer;
         private Camera cachedMainCamera;
+        private Action<string> recordingErrorHandler;
+
+        /// <summary>True while the admin panel is on screen (used by user UI to avoid hijacking it).</summary>
+        public bool IsAdminPanelActive => adminPanel != null && adminPanel.activeInHierarchy;
 
         // Authoring dialog state
 private enum AdminDialogType { None, StartNodeSelection, EndNodeSelection, NodePicker, JoinPathConfirm }
@@ -72,10 +77,52 @@ recorder = NodeRecorder.Instance != null ? NodeRecorder.Instance : FindFirstObje
 
             if (recorder != null)
             {
-                recorder.OnRecordingError += (msg) => ShowTimedStatusMessage($"<color=red>Error: {msg}</color>", 4.0f);
+                recordingErrorHandler = HandleRecordingError;
+                recorder.OnRecordingError += recordingErrorHandler;
+                recorder.OnRecordingStateChanged += HandleRecordingStateChanged;
             }
 
             UpdateUI();
+        }
+
+        private void OnDisable()
+        {
+            // Hiding the panel must not leave a modal dialog open (it pauses breadcrumb drops and GPS sampling)
+            // or a stale timed status message behind. (Status messages are timer-driven here, not a coroutine.)
+            statusMessageTimer = 0f;
+            pendingStatusMessage = null;
+            activeDialog = AdminDialogType.None;
+            if (recorder != null) recorder.IsDialogOpen = false;
+        }
+
+        private void OnDestroy()
+        {
+            if (recorder != null)
+            {
+                if (recordingErrorHandler != null)
+                    recorder.OnRecordingError -= recordingErrorHandler;
+                recorder.OnRecordingStateChanged -= HandleRecordingStateChanged;
+            }
+            recordingErrorHandler = null;
+        }
+
+        private void HandleRecordingError(string msg)
+        {
+            ShowTimedStatusMessage($"<color=red>Error: {msg}</color>", 4.0f);
+            // A failed start/stop leaves recorder state unchanged: resync the button from the source of truth
+            RefreshRecordButtonText();
+        }
+
+        private void HandleRecordingStateChanged()
+        {
+            UpdateUI();
+        }
+
+        private void RefreshRecordButtonText()
+        {
+            if (recordButtonText == null) return;
+            bool recording = recorder != null && recorder.IsRecording;
+            recordButtonText.text = recording ? "Stop & Save" : "Start Record";
         }
 
         private void AutoAssignPanels()
@@ -152,7 +199,6 @@ recorder = NodeRecorder.Instance != null ? NodeRecorder.Instance : FindFirstObje
                 else
                 {
                     recorder.StartRecording();
-                    if (recordButtonText != null) recordButtonText.text = "Stop & Save";
                 }
             }
             else
@@ -166,7 +212,6 @@ recorder = NodeRecorder.Instance != null ? NodeRecorder.Instance : FindFirstObje
                 else
                 {
                     recorder.StopAndSaveRecording();
-                    if (recordButtonText != null) recordButtonText.text = "Start Record";
                 }
             }
             UpdateUI();
@@ -180,18 +225,22 @@ recorder = NodeRecorder.Instance != null ? NodeRecorder.Instance : FindFirstObje
 
         private void FindNearestNodeForDialog()
         {
+            // Reset first so an early return can't leave a stale result from a previous call
+            nearestNodeFound = null;
+            nearestNodeDist = float.MaxValue;
+
             if (MapDataManager.Instance?.CurrentMap?.nodes == null) return;
-            
+
             Transform cam = arCameraTransform != null ? arCameraTransform : (cachedMainCamera != null ? cachedMainCamera.transform : null);
             if (cam == null || mapRoot == null) return;
 
             Vector3 userLocalPos = mapRoot.InverseTransformPoint(cam.position);
 
-            nearestNodeFound = null;
-            nearestNodeDist = float.MaxValue;
-
             foreach (var node in MapDataManager.Instance.CurrentMap.nodes)
             {
+                // QR anchors are side spurs: never suggest them as start/end of a walkway recording
+                if (node.nodeType == NodeType.QRAnchor) continue;
+
                 float d = Vector3.Distance(userLocalPos, node.localPosition);
                 if (d < nearestNodeDist)
                 {
@@ -236,13 +285,11 @@ recorder = NodeRecorder.Instance != null ? NodeRecorder.Instance : FindFirstObje
                     if (GUILayout.Button("Yes, Start from here", btnStyle))
                     {
                         recorder.StartRecording(nearestNodeFound.id);
-                        if (recordButtonText != null) recordButtonText.text = "Stop & Save";
                         OpenDialog(AdminDialogType.None);
                     }
                     if (GUILayout.Button("No, Create New Point", btnStyle))
                     {
                         recorder.StartRecording();
-                        if (recordButtonText != null) recordButtonText.text = "Stop & Save";
                         OpenDialog(AdminDialogType.None);
                     }
                     if (GUILayout.Button("Choose Other Node...", btnStyle))
@@ -260,13 +307,11 @@ recorder = NodeRecorder.Instance != null ? NodeRecorder.Instance : FindFirstObje
                     if (GUILayout.Button("Yes, End at this node", btnStyle))
                     {
                         recorder.StopAndSaveRecording(nearestNodeFound.id);
-                        if (recordButtonText != null) recordButtonText.text = "Start Record";
                         OpenDialog(AdminDialogType.None);
                     }
                     if (GUILayout.Button("No, End at current", btnStyle))
                     {
                         recorder.StopAndSaveRecording();
-                        if (recordButtonText != null) recordButtonText.text = "Start Record";
                         OpenDialog(AdminDialogType.None);
                     }
                     if (GUILayout.Button("Cancel", btnStyle)) OpenDialog(AdminDialogType.None);
@@ -277,10 +322,12 @@ recorder = NodeRecorder.Instance != null ? NodeRecorder.Instance : FindFirstObje
                     pickerScrollPos = GUILayout.BeginScrollView(pickerScrollPos);
                     foreach (var node in MapDataManager.Instance.CurrentMap.nodes)
                     {
+                        // QR anchors are side spurs and cannot be a recording start point
+                        if (node.nodeType == NodeType.QRAnchor) continue;
+
                         if (GUILayout.Button($"{node.label} ({node.id})", btnStyle))
                         {
                             recorder.StartRecording(node.id);
-                            if (recordButtonText != null) recordButtonText.text = "Stop & Save";
                             OpenDialog(AdminDialogType.None);
                         }
                     }
@@ -349,6 +396,16 @@ recorder = NodeRecorder.Instance != null ? NodeRecorder.Instance : FindFirstObje
 
         private void ShowTimedStatusMessage(string message, float duration)
         {
+            // Panel hidden: Update() is not running, so a timer would never expire. Just show the text.
+            if (!isActiveAndEnabled)
+            {
+                if (statsText != null)
+                {
+                    statsText.text = message;
+                }
+                return;
+            }
+
             pendingStatusMessage = message;
             statusMessageTimer = duration;
             if (statsText != null)
@@ -360,6 +417,7 @@ recorder = NodeRecorder.Instance != null ? NodeRecorder.Instance : FindFirstObje
         private void UpdateUI()
         {
             bool recording = recorder != null && recorder.IsRecording;
+            RefreshRecordButtonText();
             if (markDestinationButton != null)
                 markDestinationButton.interactable = recording;
             if (destinationInputField != null)
@@ -444,7 +502,7 @@ recorder = NodeRecorder.Instance != null ? NodeRecorder.Instance : FindFirstObje
             if (MapDataManager.Instance != null)
             {
                 MapDataManager.Instance.DeleteSavedMap();
-                ShowTimedStatusMessage("Map Cleared! (Bundled map returns on restart)", 3.0f);
+                ShowTimedStatusMessage("Map cleared. Bundled map reloaded.", 3.0f);
             }
         }
 }

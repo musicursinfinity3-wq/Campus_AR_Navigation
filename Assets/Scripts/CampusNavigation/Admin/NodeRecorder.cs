@@ -34,26 +34,27 @@ namespace CampusNavigation.Admin
         private float maxAllowedAccuracyMeters = 10.0f;
 
         [Header("Multi-Sample GPS Averaging")]
-        [Tooltip("Number of seconds to sample and average GPS fixes when marking destinations/junctions.")]
+        [Tooltip("Seconds of GPS fixes collected for the median position when marking destinations (20-30 s recommended; values below 20 are raised to 20 at runtime).")]
         [SerializeField]
-        private float sampleDurationSeconds = 4.0f;
+        private float sampleDurationSeconds = 25.0f;
 
-        [Tooltip("Interval between successive GPS samples during averaging.")]
+        [Tooltip("Interval in seconds between polls of the GPS service during the median window.")]
         [SerializeField]
         private float sampleIntervalSeconds = 0.5f;
+
+        // Minimum median window. Guards against an older serialized value (previous default was 4 s),
+        // which could never collect the 10 distinct fixes required.
+        private const float MIN_SAMPLE_DURATION_SECONDS = 20.0f;
+        private const int MIN_DISTINCT_FIXES = 10;
+
+        // Graph-hygiene exclusions shared by LinkToNearestJunction and SplitNearestEdge
+        private const int RECENT_NODE_EXCLUSION_COUNT = 5;
+        private const int NEARBY_HOP_EXCLUSION = 3;
 
         [Header("Graph Stitching Settings")]
         [Tooltip("Search radius in meters when manually linking to an existing nearby junction.")]
         [SerializeField]
         private float manualJunctionLinkRadius = 12.0f;
-
-        [Tooltip("If true, automatically detects existing recorded nodes near the user and links them to create intersections.")]
-        [SerializeField]
-        private bool autoConnectIntersections = false;
-
-        [Tooltip("Distance threshold (meters) to connect to existing nodes as a junction/intersection.")]
-        [SerializeField]
-        private float intersectionConnectRadius = 5.0f;
 
         [Header("References")]
         [Tooltip("Reference to the AR Camera. If null, Camera.main is used.")]
@@ -81,6 +82,10 @@ namespace CampusNavigation.Admin
         private CampusMapData currentRecordedMap;
         private CampusNode lastRecordedNode;
         private List<GameObject> spawnedDebugMarkers = new List<GameObject>();
+        private Coroutine bootstrapRoutine;
+
+        /// <summary>True while a fresh-map recording is waiting for its first good GPS/compass fix.</summary>
+        public bool IsBootstrapping => bootstrapRoutine != null;
 
         public event Action<CampusNode> OnNodeRecorded;
         public event Action<CampusEdge> OnEdgeRecorded;
@@ -109,9 +114,16 @@ namespace CampusNavigation.Admin
         /// </summary>
         public void StartRecording(string startNodeId = null, string mapName = "BSU_MainCampus_Map")
         {
+            // A fresh-map bootstrap is still waiting for GPS: a second start would replace currentRecordedMap mid-wait
+            if (bootstrapRoutine != null)
+            {
+                FailStart("Recording is already starting. Waiting for a good GPS fix.");
+                return;
+            }
+
             if (AndroidSensorManager.Instance == null || AndroidSensorManager.Instance.Status != SensorStatus.Ready)
             {
-                OnRecordingError?.Invoke("GPS is not ready. Wait for sensor initialization.");
+                FailStart("GPS is not ready. Wait for sensor initialization.");
                 return;
             }
 
@@ -138,8 +150,19 @@ namespace CampusNavigation.Admin
                 currentRecordedMap = MapDataManager.Instance.CurrentMap;
                 if (currentRecordedMap.originLatitude == 0)
                 {
-                    OnRecordingError?.Invoke("Cannot append to a map with no GPS origin.");
+                    FailStart("Cannot append to a map with no GPS origin.");
                     return;
+                }
+
+                // QR anchors are side spurs; a breadcrumb chain must never start from one
+                if (!string.IsNullOrEmpty(startNodeId))
+                {
+                    CampusNode requestedStart = currentRecordedMap.nodes.Find(n => n.id == startNodeId);
+                    if (requestedStart != null && requestedStart.nodeType == NodeType.QRAnchor)
+                    {
+                        FailStart("Cannot start recording from a QR anchor node.");
+                        return;
+                    }
                 }
 
                 // Block if MapRoot is not aligned (QR or GPS snap)
@@ -148,7 +171,7 @@ namespace CampusNavigation.Admin
                 
                 if (!isAligned)
                 {
-                    OnRecordingError?.Invoke("MapRoot is not aligned. Scan a QR or wait for GPS snap before appending.");
+                    FailStart("MapRoot is not aligned. Scan a QR or wait for GPS snap before appending.");
                     return;
                 }
 
@@ -164,7 +187,7 @@ namespace CampusNavigation.Admin
                 };
 
                 // For a brand new map, we wait for the first good accuracy fix to bootstrap.
-                StartCoroutine(BootstrapFreshMapRoutine());
+                bootstrapRoutine = StartCoroutine(BootstrapFreshMapRoutine());
                 return;
             }
 
@@ -192,37 +215,58 @@ namespace CampusNavigation.Admin
 
         private IEnumerator BootstrapFreshMapRoutine()
         {
-            Debug.Log("[NodeRecorder] Waiting for high-accuracy GPS fix to bootstrap fresh map...");
-            float timeout = 60f;
-            float elapsed = 0f;
-            
-            while (elapsed < timeout)
+            try
             {
-                if (AndroidSensorManager.Instance != null && AndroidSensorManager.Instance.Status == SensorStatus.Ready)
-                {
-                    if (AndroidSensorManager.Instance.HorizontalAccuracy <= maxAllowedAccuracyMeters)
-                    {
-                        // Check compass stability
-                        float heading = AndroidSensorManager.Instance.CurrentHeading;
-                        yield return new WaitForSeconds(1f);
-                        elapsed += 1f;
-                        
-                        if (Mathf.Abs(Mathf.DeltaAngle(heading, AndroidSensorManager.Instance.CurrentHeading)) <= 10f)
-                        {
-                            // Success!
-                            BootstrapFinish();
-                            yield break;
-                        }
-                        Debug.LogWarning("[NodeRecorder] Compass unstable, continuing wait...");
-                        continue;
-                    }
-                }
-                
-                yield return new WaitForSeconds(1f);
-                elapsed += 1f;
-            }
+                Debug.Log("[NodeRecorder] Waiting for high-accuracy GPS fix to bootstrap fresh map...");
+                float timeout = 60f;
+                float elapsed = 0f;
 
-            OnRecordingError?.Invoke("GPS timeout — move outdoors");
+                while (elapsed < timeout)
+                {
+                    if (AndroidSensorManager.Instance != null && AndroidSensorManager.Instance.Status == SensorStatus.Ready)
+                    {
+                        if (AndroidSensorManager.Instance.HorizontalAccuracy <= maxAllowedAccuracyMeters)
+                        {
+                            // Check compass stability
+                            float heading = AndroidSensorManager.Instance.CurrentHeading;
+                            yield return new WaitForSeconds(1f);
+                            elapsed += 1f;
+
+                            if (Mathf.Abs(Mathf.DeltaAngle(heading, AndroidSensorManager.Instance.CurrentHeading)) <= 10f)
+                            {
+                                // Success! Clear the guard first so BootstrapFinish's state event sees IsBootstrapping == false
+                                bootstrapRoutine = null;
+                                BootstrapFinish();
+                                yield break;
+                            }
+                            Debug.LogWarning("[NodeRecorder] Compass unstable, continuing wait...");
+                            continue;
+                        }
+                    }
+
+                    yield return new WaitForSeconds(1f);
+                    elapsed += 1f;
+                }
+
+                bootstrapRoutine = null;
+                FailStart("GPS timeout — move outdoors");
+            }
+            finally
+            {
+                // Covers every exit path (success, timeout, coroutine stopped) so a new start is never blocked forever
+                bootstrapRoutine = null;
+            }
+        }
+
+        /// <summary>
+        /// Reports a failed start: logs, raises OnRecordingError, and raises OnRecordingStateChanged
+        /// so UI bound to IsRecording can resync (nothing started).
+        /// </summary>
+        private void FailStart(string message)
+        {
+            Debug.LogWarning($"[NodeRecorder] {message}");
+            OnRecordingError?.Invoke(message);
+            OnRecordingStateChanged?.Invoke();
         }
 
         private void BootstrapFinish()
@@ -376,10 +420,30 @@ namespace CampusNavigation.Admin
                 return null;
             }
 
+#if !UNITY_EDITOR
+            // On device, MapRoot must be aligned (QR or GPS snap) or the anchor would be stored in the wrong frame.
+            // Skipped in the Editor so simulated recording keeps working.
+            bool isAligned =
+                (QRAnchorRelocalizer.Instance != null && QRAnchorRelocalizer.Instance.IsRelocalized)
+                || (GpsRelocalizer.Instance != null && GpsRelocalizer.Instance.HasPerformedInitialSnap);
+            if (!isAligned)
+            {
+                string alignMsg = "MapRoot is not aligned. Scan a QR or wait for GPS snap before recording an anchor.";
+                Debug.LogWarning($"[NodeRecorder] {alignMsg}");
+                OnRecordingError?.Invoke(alignMsg);
+                return null;
+            }
+#endif
+
             if (mapRoot == null)
             {
                 GameObject rootGo = GameObject.Find("MapRoot");
                 if (rootGo != null) mapRoot = rootGo.transform;
+            }
+
+            if (arCameraTransform == null && Camera.main != null)
+            {
+                arCameraTransform = Camera.main.transform;
             }
 
             ARTrackedImageManager imageManager = FindFirstObjectByType<ARTrackedImageManager>();
@@ -390,16 +454,23 @@ namespace CampusNavigation.Admin
                 // If payload is null, pick the closest actively tracked image
                 if (string.IsNullOrEmpty(qrPayload))
                 {
-                    float minDist = float.MaxValue;
-                    foreach (var img in imageManager.trackables)
+                    if (arCameraTransform == null)
                     {
-                        if (img.trackingState == UnityEngine.XR.ARSubsystems.TrackingState.Tracking)
+                        Debug.LogWarning("[NodeRecorder] Cannot pick the closest tracked image: AR camera transform is null.");
+                    }
+                    else
+                    {
+                        float minDist = float.MaxValue;
+                        foreach (var img in imageManager.trackables)
                         {
-                            float d = Vector3.Distance(arCameraTransform.position, img.transform.position);
-                            if (d < minDist)
+                            if (img.trackingState == UnityEngine.XR.ARSubsystems.TrackingState.Tracking)
                             {
-                                minDist = d;
-                                targetImage = img;
+                                float d = Vector3.Distance(arCameraTransform.position, img.transform.position);
+                                if (d < minDist)
+                                {
+                                    minDist = d;
+                                    targetImage = img;
+                                }
                             }
                         }
                     }
@@ -459,6 +530,15 @@ namespace CampusNavigation.Admin
                 Debug.LogError("[NodeRecorder] FAILED TO RECORD QR ANCHOR: No actively tracked image found in camera view.");
                 return null;
 #endif
+            }
+
+            // One anchor node per marker image: a duplicate payload would make FindAnchorNode ambiguous at runtime
+            if (currentRecordedMap.nodes.Exists(n => n.nodeType == NodeType.QRAnchor && n.qrPayload == qrPayload))
+            {
+                string dupMsg = $"An anchor for marker '{qrPayload}' already exists. Each marker can be recorded only once.";
+                Debug.LogWarning($"[NodeRecorder] {dupMsg}");
+                OnRecordingError?.Invoke(dupMsg);
+                return null;
             }
 
             CampusNode newNode = new CampusNode
@@ -564,21 +644,15 @@ return nearest;
             CampusNode nearest = null;
             float minDistance = float.MaxValue;
 
-            // Skip last 5 nodes
-            int skipCount = Math.Min(5, currentRecordedMap.nodes.Count);
-            HashSet<string> excludedIds = new HashSet<string>();
-            for (int i = 0; i < skipCount; i++)
-            {
-                excludedIds.Add(currentRecordedMap.nodes[currentRecordedMap.nodes.Count - 1 - i].id);
-            }
-
-            // Skip nodes within 3 graph hops
-            HashSet<string> nearHops = GetNodesWithinHops(lastRecordedNode.id, 3);
-            foreach (var id in nearHops) excludedIds.Add(id);
+            // Skip the last 5 recorded nodes and anything within 3 graph hops
+            HashSet<string> excludedIds = GetRecentAndNearbyNodeIds();
 
             foreach (var node in currentRecordedMap.nodes)
             {
                 if (excludedIds.Contains(node.id)) continue;
+
+                // QR anchors are side spurs and must never become junction targets
+                if (node.nodeType == NodeType.QRAnchor) continue;
 
                 float dist = CampusMapData.CalculateNodeDistance(lastRecordedNode, node);
 
@@ -624,6 +698,32 @@ return nearest;
             return false;
         }
 
+        /// <summary>
+        /// Node ids that must not be used as join/link targets: the last few recorded nodes plus
+        /// everything within a few graph hops of lastRecordedNode.
+        /// </summary>
+        private HashSet<string> GetRecentAndNearbyNodeIds()
+        {
+            HashSet<string> excludedIds = new HashSet<string>();
+            if (currentRecordedMap == null) return excludedIds;
+
+            int skipCount = Math.Min(RECENT_NODE_EXCLUSION_COUNT, currentRecordedMap.nodes.Count);
+            for (int i = 0; i < skipCount; i++)
+            {
+                excludedIds.Add(currentRecordedMap.nodes[currentRecordedMap.nodes.Count - 1 - i].id);
+            }
+
+            if (lastRecordedNode != null)
+            {
+                foreach (var id in GetNodesWithinHops(lastRecordedNode.id, NEARBY_HOP_EXCLUSION))
+                {
+                    excludedIds.Add(id);
+                }
+            }
+
+            return excludedIds;
+        }
+
         private HashSet<string> GetNodesWithinHops(string startNodeId, int maxHops)
         {
             HashSet<string> visited = new HashSet<string> { startNodeId };
@@ -663,14 +763,21 @@ return nearest;
             List<double> lonSamples = new List<double>();
             double lastTimestamp = -1;
 
-            float sampleDuration = 25.0f; // 20-30s window
+            if (sampleDurationSeconds < MIN_SAMPLE_DURATION_SECONDS)
+            {
+                Debug.LogWarning(
+                    $"[NodeRecorder] sampleDurationSeconds ({sampleDurationSeconds:F1}s) is below the {MIN_SAMPLE_DURATION_SECONDS:F0}s minimum; using {MIN_SAMPLE_DURATION_SECONDS:F0}s."
+                );
+            }
+            float sampleDuration = Mathf.Max(sampleDurationSeconds, MIN_SAMPLE_DURATION_SECONDS);
+            float sampleInterval = Mathf.Max(0.1f, sampleIntervalSeconds);
             float elapsed = 0f;
             while (elapsed < sampleDuration)
             {
                 // Pause sampling if a dialog is open (if required by PLAN 6.2)
                 if (IsDialogOpen)
                 {
-                    yield return new WaitForSeconds(0.5f);
+                    yield return new WaitForSeconds(sampleInterval);
                     continue;
                 }
 
@@ -679,24 +786,30 @@ return nearest;
                     double ts = AndroidSensorManager.Instance.LastFixTimestamp;
                     if (ts != lastTimestamp) // Distinct fix check
                     {
-                        latSamples.Add(AndroidSensorManager.Instance.CurrentLatitude);
-                        lonSamples.Add(AndroidSensorManager.Instance.CurrentLongitude);
+                        // Only average fixes that meet the recording accuracy gate
+                        if (AndroidSensorManager.Instance.HorizontalAccuracy <= maxAllowedAccuracyMeters)
+                        {
+                            latSamples.Add(AndroidSensorManager.Instance.CurrentLatitude);
+                            lonSamples.Add(AndroidSensorManager.Instance.CurrentLongitude);
+                        }
                         lastTimestamp = ts;
                     }
                 }
 
-                elapsed += 0.5f;
+                elapsed += sampleInterval;
                 SamplingProgress = Mathf.Clamp01(elapsed / sampleDuration);
                 OnSamplingProgressChanged?.Invoke(SamplingProgress);
-                yield return new WaitForSeconds(0.5f);
+                yield return new WaitForSeconds(sampleInterval);
             }
 
             IsSampling = false;
             OnSamplingProgressChanged?.Invoke(1.0f);
 
-            if (latSamples.Count < 10)
+            if (latSamples.Count < MIN_DISTINCT_FIXES)
             {
-                OnRecordingError?.Invoke("Insufficient GPS data. Need >= 10 distinct fixes.");
+                OnRecordingError?.Invoke(
+                    $"Insufficient GPS data. Need >= {MIN_DISTINCT_FIXES} distinct fixes within {maxAllowedAccuracyMeters:F0} m accuracy (got {latSamples.Count})."
+                );
                 yield break;
             }
 
@@ -733,12 +846,16 @@ return nearest;
                     yield break;
                 }
 
+                // Find the walkway node BEFORE adding newNode, otherwise the destination would find itself.
+                // Routing never passes through anchors, so this edge is what makes the destination reachable by A*.
+                CampusNode walkwayNode = FindNearestNonAnchorNode(newNode.localPosition);
+
                 currentRecordedMap.nodes.Add(newNode);
-                
+
                 float dx = newNode.localPosition.x - anchor.localPosition.x;
                 float dz = newNode.localPosition.z - anchor.localPosition.z;
                 float d = Mathf.Sqrt(dx * dx + dz * dz);
-                
+
                 CampusEdge edge = new CampusEdge {
                     id = $"edge_{newNode.id}_{linkToAnchorId}",
                     fromNodeId = newNode.id,
@@ -748,6 +865,28 @@ return nearest;
                 };
                 currentRecordedMap.edges.Add(edge);
                 OnEdgeRecorded?.Invoke(edge);
+
+                if (walkwayNode != null)
+                {
+                    float wdx = newNode.localPosition.x - walkwayNode.localPosition.x;
+                    float wdz = newNode.localPosition.z - walkwayNode.localPosition.z;
+                    CampusEdge walkwayEdge = new CampusEdge {
+                        id = $"edge_{newNode.id}_{walkwayNode.id}",
+                        fromNodeId = newNode.id,
+                        toNodeId = walkwayNode.id,
+                        distance = Mathf.Max(0.1f, Mathf.Sqrt(wdx * wdx + wdz * wdz)),
+                        isAccessible = true
+                    };
+                    currentRecordedMap.edges.Add(walkwayEdge);
+                    OnEdgeRecorded?.Invoke(walkwayEdge);
+                }
+                else
+                {
+                    Debug.LogError(
+                        $"[NodeRecorder] Destination '{newNode.label}' ({newNode.id}) has no walkway node to connect to. A* cannot reach it until it is linked to the path graph."
+                    );
+                }
+
                 OnNodeRecorded?.Invoke(newNode);
             }
             else
@@ -822,6 +961,15 @@ return nearest;
                 return false;
             }
 
+            // Anchors are side spurs: a walkway edge into one would let routes pass through a calibration sign
+            if (target.nodeType == NodeType.QRAnchor)
+            {
+                string msg = $"Cannot connect to QR anchor '{target.label}'. Anchors are side spurs, not path nodes.";
+                Debug.LogWarning($"[NodeRecorder] {msg}");
+                OnRecordingError?.Invoke(msg);
+                return false;
+            }
+
             float dist = CampusMapData.CalculateNodeDistance(lastRecordedNode, target);
             if (dist < 0.1f) dist = 0.1f;
 
@@ -846,9 +994,17 @@ return nearest;
         /// endNodeId: if provided, links the last recorded node to this existing node to finish the path.
         /// </summary>
         public bool StopAndSaveRecording(string endNodeId = null)
-{
+        {
             if (!IsRecording)
                 return false;
+
+            // A sampling coroutine would add its node to a map that was already saved
+            if (IsSampling)
+            {
+                Debug.LogWarning("[NodeRecorder] Cannot stop while GPS sampling is in progress.");
+                OnRecordingError?.Invoke("Wait for sampling to finish");
+                return false;
+            }
 
             if (!string.IsNullOrEmpty(endNodeId))
             {
@@ -890,11 +1046,19 @@ return nearest;
             Vector3 splitPoint = Vector3.zero;
             float bestT = 0f;
 
+            // Never split next to where we just recorded: last 5 nodes and anything within 3 hops
+            HashSet<string> excludedIds = GetRecentAndNearbyNodeIds();
+
             foreach (var edge in currentRecordedMap.edges)
             {
                 CampusNode a = currentRecordedMap.nodes.Find(n => n.id == edge.fromNodeId);
                 CampusNode b = currentRecordedMap.nodes.Find(n => n.id == edge.toNodeId);
                 if (a == null || b == null) continue;
+
+                // Anchor spurs are not walkway edges: never split or join them
+                if (a.nodeType == NodeType.QRAnchor || b.nodeType == NodeType.QRAnchor) continue;
+
+                if (excludedIds.Contains(a.id) || excludedIds.Contains(b.id)) continue;
 
                 // Horizontal projection for chord logic
                 Vector3 pA = new Vector3(a.localPosition.x, 0f, a.localPosition.z);
@@ -936,6 +1100,23 @@ return nearest;
 
                 if (targetNode != null)
                 {
+                    // Never reuse an anchor, never link a node to itself, never duplicate an existing edge
+                    if (targetNode.nodeType == NodeType.QRAnchor || targetNode == lastRecordedNode)
+                    {
+                        Debug.Log($"[NodeRecorder] Split/join skipped: endpoint {targetNode.id} is the current node or an anchor.");
+                        return false;
+                    }
+
+                    bool edgeExists = currentRecordedMap.edges.Exists(e =>
+                        (e.fromNodeId == lastRecordedNode.id && e.toNodeId == targetNode.id) ||
+                        (e.fromNodeId == targetNode.id && e.toNodeId == lastRecordedNode.id)
+                    );
+                    if (edgeExists)
+                    {
+                        Debug.Log($"[NodeRecorder] Split/join skipped: {lastRecordedNode.id} is already connected to {targetNode.id}.");
+                        return false;
+                    }
+
                     float dx = lastRecordedNode.localPosition.x - targetNode.localPosition.x;
                     float dz = lastRecordedNode.localPosition.z - targetNode.localPosition.z;
                     float dist = Mathf.Sqrt(dx * dx + dz * dz);

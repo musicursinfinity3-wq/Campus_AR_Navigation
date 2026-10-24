@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using CampusNavigation.Admin;
 using CampusNavigation.Data;
 using CampusNavigation.Localization;
 using CampusNavigation.Pathfinding;
@@ -86,6 +87,7 @@ namespace CampusNavigation.Navigation
 
         private List<CampusNode> availableDestinations = new List<CampusNode>();
         private TextMeshProUGUI cachedScanHintText;
+        private AdminUIController adminController;
 
         private void Awake()
         {
@@ -139,6 +141,10 @@ namespace CampusNavigation.Navigation
             if (relocalizer != null)
             {
                 relocalizer.OnScanHintChanged += UpdateScanHintUI;
+                relocalizer.OnSessionReset += HandleSessionReset;
+
+                // Sync the scan prompt text once with whatever hint is already active
+                UpdateScanHintUI(relocalizer.ScanHint);
             }
 
             if (pathfinder != null)
@@ -168,13 +174,31 @@ namespace CampusNavigation.Navigation
                 relocalizer.OnRelocalizedToAnchor -= OnQRAnchorScanned;
                 relocalizer.OnSuspiciousRelocalizationDetected -= OnSuspiciousRelocalization;
                 relocalizer.OnPendingRelocalizationResolved -= OnSuspiciousRelocalizationResolved;
+                relocalizer.OnScanHintChanged -= UpdateScanHintUI;
+                relocalizer.OnSessionReset -= HandleSessionReset;
             }
 
             if (sessionManager != null)
             {
                 sessionManager.OnNavigationFailed -= ShowFeedbackMessage;
                 sessionManager.OnDestinationReached -= OnReachedDestination;
+                sessionManager.OnNavigationEnded -= HandleNavigationEnded;
             }
+        }
+
+        /// <summary>
+        /// Full AR session reset (re-init / app resume): return visitors to the welcome screen,
+        /// unless an admin is currently working in the admin panel.
+        /// </summary>
+        private void HandleSessionReset()
+        {
+            if (adminController == null)
+                adminController = FindFirstObjectByType<AdminUIController>();
+
+            if (adminController != null && adminController.IsAdminPanelActive)
+                return;
+
+            ShowStartPanel();
         }
 
         private void OnSuspiciousRelocalization(QRAnchorRelocalizer.PendingRelocalization pending)
@@ -196,7 +220,8 @@ namespace CampusNavigation.Navigation
             if ((relocalizer != null && relocalizer.IsRelocalized) || 
                 (GpsRelocalizer.Instance != null && GpsRelocalizer.Instance.HasPerformedInitialSnap))
             {
-                ShowSearchPanel();
+                // Keep any status message (e.g. "You have arrived") set just before navigation ended
+                ShowSearchPanel(false);
             }
             else
             {
@@ -403,8 +428,10 @@ namespace CampusNavigation.Navigation
 
         private void OnReachedDestination()
         {
+            // Don't clear status here, then set the arrival message after the panel switch.
+            // (HandleNavigationEnded also calls ShowSearchPanel(false) right after this event.)
+            ShowSearchPanel(false);
             ShowFeedbackMessage("You have arrived at your destination!");
-            ShowSearchPanel();
         }
 
         // ================= UI STATE SWITCHERS =================
@@ -419,10 +446,17 @@ namespace CampusNavigation.Navigation
             SetPanelState(startPanel: false, scanPrompt: true, search: false, activeNav: false);
         }
 
+        // Parameterless overload kept (not a default argument) so it still binds to UnityAction
+        // listeners such as bypassButton.onClick and to external callers.
         public void ShowSearchPanel()
         {
+            ShowSearchPanel(true);
+        }
+
+        public void ShowSearchPanel(bool clearStatus)
+        {
             SetPanelState(startPanel: false, scanPrompt: false, search: true, activeNav: false);
-            if (statusFeedbackText != null)
+            if (clearStatus && statusFeedbackText != null)
                 statusFeedbackText.text = "";
             if (MapDataManager.Instance != null && MapDataManager.Instance.CurrentMap != null)
             {
