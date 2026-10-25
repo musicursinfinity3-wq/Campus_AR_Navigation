@@ -48,6 +48,9 @@ namespace CampusNavigation.Visualizer
         // Active path state
         private List<CampusNode> currentRoute = new List<CampusNode>();
         private List<GameObject> activeRouteObjects = new List<GameObject>();
+        private List<int> activeArrowSegmentIndex = new List<int>();
+        private int currentSegment;
+        private bool destinationReachedLogged;
         private int currentTargetIndex = 0;
 
         private void Awake()
@@ -88,18 +91,43 @@ namespace CampusNavigation.Visualizer
                     ? mapRoot.InverseTransformPoint(arCameraTransform.position)
                     : arCameraTransform.position;
 
-            Vector3 targetPos = currentRoute[currentTargetIndex].localPosition;
-
-            float horizontalDistance = Vector2.Distance(
-                new Vector2(userMapPos.x, userMapPos.z),
-                new Vector2(targetPos.x, targetPos.z)
-            );
-
-            if (horizontalDistance <= waypointReachRadius)
+            Vector2 userPos = new Vector2(userMapPos.x, userMapPos.z);
+            int bestSegment = currentSegment;
+            float closestDistanceSquared = float.PositiveInfinity;
+            int lastCandidate = Mathf.Min(currentSegment + 2, currentRoute.Count - 2);
+            for (int i = currentSegment; i <= lastCandidate; i++)
             {
-                currentTargetIndex++;
-                if (currentTargetIndex >= currentRoute.Count)
+                Vector3 startPos = currentRoute[i].localPosition;
+                Vector3 endPos = currentRoute[i + 1].localPosition;
+                Vector2 start = new Vector2(startPos.x, startPos.z);
+                Vector2 segment = new Vector2(endPos.x, endPos.z) - start;
+                float t = segment.sqrMagnitude > 0f
+                    ? Mathf.Clamp01(Vector2.Dot(userPos - start, segment) / segment.sqrMagnitude)
+                    : 0f;
+                Vector2 projection = start + t * segment;
+                float distanceSquared = (userPos - projection).sqrMagnitude;
+                if (distanceSquared < closestDistanceSquared)
                 {
+                    closestDistanceSquared = distanceSquared;
+                    bestSegment = i;
+                }
+            }
+            currentSegment = bestSegment;
+            currentTargetIndex = currentSegment + 1;
+
+            if (!destinationReachedLogged && currentSegment == currentRoute.Count - 2)
+            {
+                Vector3 startPos = currentRoute[currentSegment].localPosition;
+                Vector3 endPos = currentRoute[currentSegment + 1].localPosition;
+                Vector2 start = new Vector2(startPos.x, startPos.z);
+                Vector2 end = new Vector2(endPos.x, endPos.z);
+                Vector2 segment = end - start;
+                bool passedEnd = segment.sqrMagnitude > 0f
+                    ? Vector2.Dot(userPos - start, segment) >= segment.sqrMagnitude
+                    : (userPos - end).sqrMagnitude <= 0.0001f;
+                if (passedEnd)
+                {
+                    destinationReachedLogged = true;
                     Debug.Log("[ARRouteVisualizer] Destination reached!");
                 }
             }
@@ -108,8 +136,15 @@ namespace CampusNavigation.Visualizer
                 Vector3 camPos = arCameraTransform.position;
                 Vector3 camForward = arCameraTransform.forward;
 
-                foreach (var arrow in activeRouteObjects)
+                for (int i = 0; i < activeRouteObjects.Count; i++)
                 {
+                    GameObject arrow = activeRouteObjects[i];
+                    if (activeArrowSegmentIndex[i] < currentSegment)
+                    {
+                        if (arrow != null) Destroy(arrow);
+                        activeRouteObjects[i] = null;
+                        continue;
+                    }
                     if (arrow != null)
                     {
                         float dist = Vector3.Distance(camPos, arrow.transform.position);
@@ -149,6 +184,8 @@ namespace CampusNavigation.Visualizer
             {
                 Vector3 pA = currentRoute[i].localPosition + Vector3.up * groundYOffset;
                 Vector3 pB = currentRoute[i + 1].localPosition + Vector3.up * groundYOffset;
+                pA.y = groundYOffset;
+                pB.y = groundYOffset;
 
                 Vector3 direction = (pB - pA).normalized;
                 float segmentLength = Vector3.Distance(pA, pB);
@@ -165,16 +202,19 @@ namespace CampusNavigation.Visualizer
 
                     GameObject arrowObj = SpawnArrow(arrowPos, arrowRotation);
                     activeRouteObjects.Add(arrowObj);
+                    activeArrowSegmentIndex.Add(i);
                 }
             }
 
             // Spawn final destination marker in MapRoot local space
             Vector3 destinationPos =
                 currentRoute[currentRoute.Count - 1].localPosition + Vector3.up * groundYOffset;
+            destinationPos.y = groundYOffset;
             GameObject pin = SpawnDestinationPin(destinationPos);
             if (pin != null)
             {
                 activeRouteObjects.Add(pin);
+                activeArrowSegmentIndex.Add(currentRoute.Count - 2);
             }
 
             Debug.Log(
@@ -193,7 +233,10 @@ namespace CampusNavigation.Visualizer
                     Destroy(obj);
             }
             activeRouteObjects.Clear();
+            activeArrowSegmentIndex.Clear();
             currentRoute.Clear();
+            currentSegment = 0;
+            destinationReachedLogged = false;
             currentTargetIndex = 0;
         }
 
