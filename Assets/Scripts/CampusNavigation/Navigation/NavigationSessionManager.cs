@@ -42,6 +42,7 @@ namespace CampusNavigation.Navigation
         public event Action<string> OnNavigationFailed;
 
         private List<CampusNode> activeRoute;
+        private int routeSegmentIndex;
 
         private void Awake()
         {
@@ -90,13 +91,57 @@ namespace CampusNavigation.Navigation
 
             Vector3 destPos = CurrentDestination.localPosition;
 
-            RemainingDistance = Vector2.Distance(
-                new Vector2(userMapPos.x, userMapPos.z),
-                new Vector2(destPos.x, destPos.z)
-            );
+            Vector2 userPos = new Vector2(userMapPos.x, userMapPos.z);
+            float distanceToDestination = Vector2.Distance(userPos, new Vector2(destPos.x, destPos.z));
+
+            if (activeRoute.Count < 2)
+            {
+                RemainingDistance = distanceToDestination;
+            }
+            else
+            {
+                int bestSegmentIndex = routeSegmentIndex;
+                Vector2 bestProjection = userPos;
+                float closestDistanceSquared = float.PositiveInfinity;
+                int lastCandidate = Mathf.Min(routeSegmentIndex + 2, activeRoute.Count - 2);
+
+                for (int i = routeSegmentIndex; i <= lastCandidate; i++)
+                {
+                    Vector3 startPos = activeRoute[i].localPosition;
+                    Vector3 endPos = activeRoute[i + 1].localPosition;
+                    Vector2 start = new Vector2(startPos.x, startPos.z);
+                    Vector2 end = new Vector2(endPos.x, endPos.z);
+                    Vector2 segment = end - start;
+                    float t = segment.sqrMagnitude > 0f
+                        ? Mathf.Clamp01(Vector2.Dot(userPos - start, segment) / segment.sqrMagnitude)
+                        : 0f;
+                    Vector2 projection = start + t * segment;
+                    float distanceSquared = (userPos - projection).sqrMagnitude;
+
+                    if (distanceSquared < closestDistanceSquared)
+                    {
+                        closestDistanceSquared = distanceSquared;
+                        bestSegmentIndex = i;
+                        bestProjection = projection;
+                    }
+                }
+
+                routeSegmentIndex = bestSegmentIndex;
+                Vector3 segmentEnd = activeRoute[routeSegmentIndex + 1].localPosition;
+                RemainingDistance = Mathf.Sqrt(closestDistanceSquared)
+                    + Vector2.Distance(bestProjection, new Vector2(segmentEnd.x, segmentEnd.z));
+
+                for (int i = routeSegmentIndex + 1; i < activeRoute.Count - 1; i++)
+                {
+                    Vector3 startPos = activeRoute[i].localPosition;
+                    Vector3 endPos = activeRoute[i + 1].localPosition;
+                    RemainingDistance += Vector2.Distance(
+                        new Vector2(startPos.x, startPos.z), new Vector2(endPos.x, endPos.z));
+                }
+            }
 
             // Arrival check: within 2.5m of final destination
-            if (RemainingDistance <= 2.5f)
+            if (distanceToDestination <= 2.5f)
             {
                 Debug.Log($"[NavigationSessionManager] Arrived at {CurrentDestination.label}!");
                 OnDestinationReached?.Invoke();
@@ -212,6 +257,7 @@ namespace CampusNavigation.Navigation
 
             // 2. Compute shortest route via A*
             activeRoute = pathfinder.FindPath(nearest.id, destinationNodeId);
+            routeSegmentIndex = 0;
             if (activeRoute == null || activeRoute.Count == 0)
             {
                 string error = $"No connected path found to destination.";
@@ -238,6 +284,7 @@ namespace CampusNavigation.Navigation
         /// </summary>
         public void StopNavigation()
         {
+            routeSegmentIndex = 0;
             if (!IsNavigating)
                 return;
 
