@@ -147,6 +147,34 @@ namespace CampusNavigation.Visualizer
                     }
                     if (arrow != null)
                     {
+                        if (activeArrowSegmentIndex[i] == currentSegment)
+                        {
+                            Vector3 segmentStart = currentRoute[currentSegment].localPosition;
+                            Vector3 segmentEnd = currentRoute[currentSegment + 1].localPosition;
+                            Vector2 segStart = new Vector2(segmentStart.x, segmentStart.z);
+                            Vector2 segment = new Vector2(segmentEnd.x, segmentEnd.z) - segStart;
+                            if (segment.sqrMagnitude > 0f)
+                            {
+                                Vector2 dir = segment.normalized;
+                                Vector3 arrowLocal = arrow.transform.localPosition;
+                                Vector2 arrowLocalXZ = new Vector2(arrowLocal.x, arrowLocal.z);
+                                Vector2 localUserPos = userPos;
+                                if (mapRoot == null)
+                                {
+                                    Vector3 userLocal = transform.InverseTransformPoint(camPos);
+                                    localUserPos = new Vector2(userLocal.x, userLocal.z);
+                                }
+                                float arrowAlong = Vector2.Dot(arrowLocalXZ - segStart, dir);
+                                float userAlong = Vector2.Dot(localUserPos - segStart, dir);
+                                // The pin is at the segment end, so it survives until the user passes it.
+                                if (arrowAlong < userAlong - 0.5f)
+                                {
+                                    Destroy(arrow);
+                                    activeRouteObjects[i] = null;
+                                    continue;
+                                }
+                            }
+                        }
                         float dist = Vector3.Distance(camPos, arrow.transform.position);
 
                         // Check distance limit
