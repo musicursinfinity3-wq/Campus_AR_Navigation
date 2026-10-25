@@ -55,6 +55,17 @@ namespace CampusNavigation.Sensors
         [SerializeField] private float editorSimulatedAltitude = 1300.0f; // Approx elevation above sea level (m)
         [SerializeField] private float editorSimulatedAccuracy = 3.5f;
 
+        private void Awake()
+        {
+            if (Instance != null && Instance != this)
+            {
+                Destroy(gameObject);
+                return;
+            }
+
+            Instance = this;
+        }
+
         private void Start()
         {
             StartCoroutine(InitializeSensorsRoutine());
