@@ -5023,7 +5023,7 @@ MonoBehaviour:
   arrowSpacing: 1.5
   maxVisibleDistance: 8
   waypointReachRadius: 2
-  groundYOffset: -1.4
+  groundYOffset: 0.02
   arCameraTransform: {fileID: 2512387469332387801}
   mapRoot: {fileID: 2133799770}
 --- !u!114 &707544276
@@ -5052,6 +5052,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::CampusNavigation.Admin.NodeRecorder
   nodeDropInterval: 3
   maxAllowedAccuracyMeters: 10
+  markerMountHeight: 1.4
+  phoneHoldHeight: 1.4
   sampleDurationSeconds: 4
   sampleIntervalSeconds: 0.5
   manualJunctionLinkRadius: 12
@@ -5120,6 +5122,7 @@ MonoBehaviour:
   mapRoot: {fileID: 0}
   arCameraTransform: {fileID: 0}
   initialSnapMaxAccuracyMeters: 10
+  phoneHoldHeight: 1.4
   enableInMotionYawDamping: 1
   minMotionDisplacementMeters: 8
   maxYawRateDegreesPerSec: 1.5
