@@ -80,6 +80,7 @@ namespace CampusNavigation.Admin
         public float DistanceToNextDrop { get; private set; }
 
         private CampusMapData currentRecordedMap;
+        private int nodesSinceAutosave;
         private CampusNode lastRecordedNode;
         private List<GameObject> spawnedDebugMarkers = new List<GameObject>();
         private Coroutine bootstrapRoutine;
@@ -203,6 +204,7 @@ namespace CampusNavigation.Admin
 
             ClearDebugMarkers();
             IsRecording = true;
+            nodesSinceAutosave = 0;
             Debug.Log("[NodeRecorder] Recording session started.");
             OnRecordingStateChanged?.Invoke();
 
@@ -295,6 +297,7 @@ namespace CampusNavigation.Admin
 
             ClearDebugMarkers();
             IsRecording = true;
+            nodesSinceAutosave = 0;
             Debug.Log("[NodeRecorder] Fresh map recording session started.");
             OnRecordingStateChanged?.Invoke();
 
@@ -583,6 +586,7 @@ id = $"edge_{newNode.id}_{nearest.id}",
                 Debug.Log($"[NodeRecorder] QR Anchor '{newNode.id}' connected as spur to '{nearest.id}' ({dist:F1}m)");
             }
 
+            CountNodeForAutosave();
             Debug.Log($"<color=cyan>[NodeRecorder] ✓ RECORDED QR ANCHOR (v{newNode.anchorVersion}):</color> ID={newNode.id} | Payload='{newNode.qrPayload}' | LocalPos={newNode.localPosition}");
             OnNodeRecorded?.Invoke(newNode);
             
@@ -889,6 +893,7 @@ return nearest;
                     );
                 }
 
+                CountNodeForAutosave();
                 OnNodeRecorded?.Invoke(newNode);
             }
             else
@@ -938,6 +943,7 @@ return nearest;
             }
 
             lastRecordedNode = newNode;
+            CountNodeForAutosave();
 
             if (arCameraTransform != null)
                 SpawnDebugMarker(arCameraTransform.position);
@@ -1014,6 +1020,7 @@ return nearest;
             }
 
             IsRecording = false;
+            nodesSinceAutosave = 0;
             currentRecordedMap.savedTimestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             OnRecordingStateChanged?.Invoke();
 
@@ -1197,6 +1204,7 @@ return nearest;
                 currentRecordedMap.edges.Add(recordingLink);
                 
                 lastRecordedNode = intersection;
+                CountNodeForAutosave();
                 OnNodeRecorded?.Invoke(intersection);
                 OnEdgeRecorded?.Invoke(edgeAI);
                 OnEdgeRecorded?.Invoke(edgeIB);
@@ -1211,6 +1219,7 @@ return nearest;
 
         public void ClearRecordedMap()
         {
+            nodesSinceAutosave = 0;
             if (currentRecordedMap != null)
             {
                 currentRecordedMap.nodes.Clear();
@@ -1226,6 +1235,39 @@ return nearest;
 
             Debug.Log("[NodeRecorder] Recorded map cleared.");
             OnRecordingStateChanged?.Invoke();
+        }
+
+        private void CountNodeForAutosave()
+        {
+            nodesSinceAutosave++;
+            if (nodesSinceAutosave < 5) return;
+
+            if (MapDataManager.Instance != null)
+            {
+                bool success = MapDataManager.Instance.SaveMapSilently(currentRecordedMap);
+                Debug.Log($"[NodeRecorder] Five-node autosave: {currentRecordedMap.nodes.Count} nodes, success={success}.");
+            }
+            else
+            {
+                Debug.LogWarning($"[NodeRecorder] Autosave skipped: no MapDataManager ({currentRecordedMap.nodes.Count} nodes).");
+            }
+            nodesSinceAutosave = 0;
+        }
+
+        private void OnApplicationPause(bool pauseStatus)
+        {
+            if (!pauseStatus || !IsRecording || currentRecordedMap == null || currentRecordedMap.nodes.Count == 0)
+                return;
+
+            if (MapDataManager.Instance != null)
+            {
+                bool success = MapDataManager.Instance.SaveMapSilently(currentRecordedMap);
+                Debug.Log($"[NodeRecorder] Pause autosave: {currentRecordedMap.nodes.Count} nodes, success={success}.");
+            }
+            else
+            {
+                Debug.LogWarning($"[NodeRecorder] Pause autosave skipped: no MapDataManager ({currentRecordedMap.nodes.Count} nodes).");
+            }
         }
 
         private void SpawnDebugMarker(Vector3 worldPos)

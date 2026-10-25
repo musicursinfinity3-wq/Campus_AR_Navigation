@@ -10,6 +10,7 @@ Library: C:\Users\kenha\Campus_AR_Navigation\Temp\BurstOutput\tempburstlibs\arm6
 --target-framework=NetFramework
 --generate-link-xml=Temp\burst.link.xml
 --temp-folder=C:\Users\kenha\Campus_AR_Navigation\Temp\Burst
+--debug=LineOnly
 --key-folder=C:/Program Files/Unity/Hub/Editor/6000.3.17f1/Editor/Data/PlaybackEngines/AndroidPlayer
 --decode-folder=C:\Users\kenha\Campus_AR_Navigation\Library\Burst
 --output=C:\Users\kenha\Campus_AR_Navigation\Temp\BurstOutput\tempburstlibs\arm64-v8a\lib_burst_generated
@@ -128,6 +129,7 @@ Library: C:\Users\kenha\Campus_AR_Navigation\Temp\BurstOutput\tempburstlibs\arm6
 --float-mode=Fast
 --generate-link-xml=Temp\burst.link.xml
 --temp-folder=C:\Users\kenha\Campus_AR_Navigation\Temp\Burst
+--debug=LineOnly
 --key-folder=C:/Program Files/Unity/Hub/Editor/6000.3.17f1/Editor/Data/PlaybackEngines/AndroidPlayer
 --decode-folder=C:\Users\kenha\Campus_AR_Navigation\Library\Burst
 --output=C:\Users\kenha\Campus_AR_Navigation\Temp\BurstOutput\tempburstlibs\arm64-v8a\lib_burst_generated
@@ -146,6 +148,7 @@ Library: C:\Users\kenha\Campus_AR_Navigation\Temp\BurstOutput\tempburstlibs\arm6
 --target-framework=NetFramework
 --generate-link-xml=Temp\burst.link.xml
 --temp-folder=C:\Users\kenha\Campus_AR_Navigation\Temp\Burst
+--debug=LineOnly
 --key-folder=C:/Program Files/Unity/Hub/Editor/6000.3.17f1/Editor/Data/PlaybackEngines/AndroidPlayer
 --decode-folder=C:\Users\kenha\Campus_AR_Navigation\Library\Burst
 --output=C:\Users\kenha\Campus_AR_Navigation\Temp\BurstOutput\tempburstlibs\arm64-v8a\lib_burst_generated

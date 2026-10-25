@@ -575,6 +575,7 @@ UnityEngine.Event::set_displayIndex_Injected
 UnityEngine.Event::set_mousePosition_Injected
 UnityEngine.Event::set_type_Injected
 UnityEngine.Event::get_modifiers_Injected
+UnityEngine.Event::GetTypeForControl_Injected
 UnityEngine.Event::get_rawType_Injected
 UnityEngine.Event::get_type_Injected
 UnityEngine.Event::get_Internal_keyCode_Injected
@@ -711,8 +712,13 @@ UnityEngine.GraphicsBuffer::SetName_Injected
 UnityEngine.GraphicsBuffer::get_bufferHandle_Injected
 UnityEngine.GraphicsBuffer::BeginBufferWrite_Injected
 UnityEngine.GraphicsBuffer::GetUsageFlags_Injected
+UnityEngine.GUI::HasMouseControl
 UnityEngine.GUI::get_changed
 UnityEngine.GUI::get_enabled
+UnityEngine.GUI::get_usePageScrollbars
+UnityEngine.GUI::GrabMouseControl
+UnityEngine.GUI::InternalRepaintEditorWindow
+UnityEngine.GUI::ReleaseMouseControl
 UnityEngine.GUI::get_backgroundColor_Injected
 UnityEngine.GUI::get_color_Injected
 UnityEngine.GUI::get_contentColor_Injected
@@ -726,6 +732,7 @@ UnityEngine.GUIClip::GetMatrix_Injected
 UnityEngine.GUIClip::Internal_Pop
 UnityEngine.GUIClip::Internal_PopParentClip
 UnityEngine.GUIClip::Internal_PushParentClip_Injected
+UnityEngine.GUIClip::Internal_Push_Injected
 UnityEngine.GUIClip::SetMatrix_Injected
 UnityEngine.GUIClip::get_visibleRect_Injected
 UnityEngine.GUILayoutUtility::Internal_GetWindowRect_Injected
@@ -739,10 +746,14 @@ UnityEngine.GUIStyle::get_fontSize_Injected
 UnityEngine.GUIStyle::GetDefaultFont_Injected
 UnityEngine.GUIStyle::GetRectOffsetPtr_Injected
 UnityEngine.GUIStyle::GetStyleStatePtr_Injected
+UnityEngine.GUIStyle::Internal_Copy_Injected
 UnityEngine.GUIStyle::Internal_Create
 UnityEngine.GUIStyle::get_font_Injected
+UnityEngine.GUIStyle::Internal_CalcHeight_Injected
 UnityEngine.GUIStyle::get_fixedHeight_Injected
 UnityEngine.GUIStyle::get_fixedWidth_Injected
+UnityEngine.GUIStyle::Internal_CalcMinMaxWidth_Injected
+UnityEngine.GUIStyle::Internal_CalcSizeWithConstraints_Injected
 UnityEngine.GUIStyle::Internal_Destroy
 UnityEngine.GUIStyle::Internal_DestroyTextGenerator
 UnityEngine.GUIStyle::Internal_Draw2_Injected
@@ -753,8 +764,13 @@ UnityEngine.GUIStyle::SetMouseTooltip_Injected
 UnityEngine.GUIStyle::get_Internal_clipOffset_Injected
 UnityEngine.GUIStyle::get_rawName_Injected
 UnityEngine.GUIStyle::set_alignment_Injected
+UnityEngine.GUIStyle::set_fixedHeight_Injected
+UnityEngine.GUIStyle::set_fontSize_Injected
+UnityEngine.GUIStyle::set_fontStyle_Injected
 UnityEngine.GUIStyle::set_rawName_Injected
 UnityEngine.GUIStyle::set_stretchHeight_Injected
+UnityEngine.GUIStyle::set_stretchWidth_Injected
+UnityEngine.GUIStyle::set_wordWrap_Injected
 UnityEngine.GUIStyle::get_fontStyle_Injected
 UnityEngine.GUIStyle::get_imagePosition_Injected
 UnityEngine.GUIStyle::get_alignment_Injected
@@ -785,6 +801,7 @@ UnityEngine.GUIUtility::get_compositionString_Injected
 UnityEngine.GUIUtility::get_systemCopyBuffer_Injected
 UnityEngine.GUIUtility::set_compositionCursorPos_Injected
 UnityEngine.GUIUtility::set_imeCompositionMode
+UnityEngine.GUIUtility::set_mouseUsed
 UnityEngine.GUIUtility::set_pixelsPerPoint
 UnityEngine.GUIUtility::set_systemCopyBuffer_Injected
 UnityEngine.Handheld::Vibrate

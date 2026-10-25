@@ -74,6 +74,26 @@ namespace CampusNavigation.Data
         }
 
         /// <summary>
+        /// Saves recording progress without notifying listeners or changing the bundled map.
+        /// </summary>
+        public bool SaveMapSilently(CampusMapData mapData)
+        {
+            try
+            {
+                string path = Path.Combine(Application.persistentDataPath, MAP_FILE_NAME);
+                mapData.savedTimestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                string json = JsonUtility.ToJson(mapData, true);
+                File.WriteAllText(path, json);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[MapDataManager] Failed to silently save map: {ex.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>
         /// Deletes the saved map file from the device and clears the in-memory map.
         /// </summary>
         public bool DeleteSavedMap()
