@@ -33,10 +33,10 @@ namespace CampusNavigation.Visualizer
         private float waypointReachRadius = 2.0f;
 
         [Tooltip(
-            "Vertical offset from camera eye-level down to ground level (default -1.4m for human eye height)."
+            "Offset in meters above the node's y, since MapRoot.y is ground level."
         )]
         [SerializeField]
-        private float groundYOffset = -1.4f;
+        private float groundYOffset = 0.02f;
 
         [Header("References")]
         [SerializeField]

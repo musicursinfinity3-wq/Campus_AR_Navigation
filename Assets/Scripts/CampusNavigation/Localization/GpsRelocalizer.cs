@@ -26,6 +26,10 @@ namespace CampusNavigation.Localization
         [Tooltip("Maximum allowed GPS accuracy (in meters) to perform the initial startup snap.")]
         [SerializeField] private float initialSnapMaxAccuracyMeters = 10.0f;
 
+        [Tooltip("Camera height above ground, meters.")]
+        [SerializeField] private float phoneHoldHeight = 1.4f;
+        public float PhoneHoldHeight => phoneHoldHeight;
+
         [Header("In-Motion Drift Damping")]
         [Tooltip("Allow gentle yaw correction while moving outdoors.")]
         [SerializeField] private bool enableInMotionYawDamping = true;
@@ -243,6 +247,8 @@ namespace CampusNavigation.Localization
             // 3. Shift MapRoot so that the user's current camera position corresponds to userLocalPos
             Vector3 rotatedLocalPos = mapRoot.rotation * userLocalPos;
             mapRoot.position = arCameraTransform.position - rotatedLocalPos;
+            mapRoot.position = new Vector3(mapRoot.position.x,
+                arCameraTransform.position.y - phoneHoldHeight, mapRoot.position.z);
 
             HasPerformedInitialSnap = true;
             lastMotionLat = currentLat;

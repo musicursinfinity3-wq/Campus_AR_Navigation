@@ -33,6 +33,12 @@ namespace CampusNavigation.Admin
         [SerializeField]
         private float maxAllowedAccuracyMeters = 10.0f;
 
+        [Tooltip("Height of marker center above ground, meters.")]
+        [SerializeField] private float markerMountHeight = 1.4f;
+
+        [Tooltip("Camera height above ground, meters. Used when GpsRelocalizer is unavailable.")]
+        [SerializeField] private float phoneHoldHeight = 1.4f;
+
         [Header("Multi-Sample GPS Averaging")]
         [Tooltip("Seconds of GPS fixes collected for the median position when marking destinations (20-30 s recommended; values below 20 are raised to 20 at runtime).")]
         [SerializeField]
@@ -288,7 +294,11 @@ namespace CampusNavigation.Admin
                 float mapRootYaw = (cameraYaw - compassHeading);
 
                 mapRoot.rotation = Quaternion.Euler(0f, mapRootYaw, 0f);
-                mapRoot.position = arCameraTransform.position; // Positioned at camera
+                float holdHeight = GpsRelocalizer.Instance != null
+                    ? GpsRelocalizer.Instance.PhoneHoldHeight
+                    : phoneHoldHeight;
+                mapRoot.position = new Vector3(arCameraTransform.position.x,
+                    arCameraTransform.position.y - holdHeight, arCameraTransform.position.z);
                 
                 MapDataManager.Instance?.SetCurrentMap(currentRecordedMap);
                 GpsRelocalizer.Instance?.MarkExternallyAligned();
@@ -534,6 +544,8 @@ namespace CampusNavigation.Admin
                 return null;
 #endif
             }
+
+            localPos.y = markerMountHeight;
 
             // One anchor node per marker image: a duplicate payload would make FindAnchorNode ambiguous at runtime
             if (currentRecordedMap.nodes.Exists(n => n.nodeType == NodeType.QRAnchor && n.qrPayload == qrPayload))
