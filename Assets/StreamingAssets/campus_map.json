@@ -8,7 +8,7 @@
         {
             "id": "node_0001",
             "label": "BSU Main Entrance Anchor",
-            "nodeType": 2,
+            "nodeType": 3,
             "localPosition": {
                 "x": 0.0,
                 "y": 0.0,

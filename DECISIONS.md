@@ -34,7 +34,8 @@ This file logs key architectural decisions, rationale ("Why"), and constraints. 
 
 ---
 
-### 2026-03-31: Session Resumption Without Redundant Start Points
+### 2026-03-31: Session Resumption Without Redundant Start Points — Superseded
+- **Status:** Superseded by the 2026-10-25 explicit recording endpoint confirmation decision.
 - **Decision:** When resuming recording on an existing map within $3.5\text{m}$ of an existing node (e.g., Point B), `NodeRecorder` sets `lastRecordedNode = nearestNode` directly instead of instantiating a duplicate node labeled "Start Point".
 - **Why:** Creating a new "Start Point" at the exact same coordinates as an existing destination caused duplicate zero-distance nodes, split graphs into disconnected segments, and caused A* to report "No path found".
 
@@ -52,7 +53,8 @@ This file logs key architectural decisions, rationale ("Why"), and constraints. 
 
 ---
 
-### 2026-03-30: Multi-Sample Averaging for Destinations & Anchors
+### 2026-03-30: Multi-Sample Averaging for Destinations & Anchors — Superseded
+- **Status:** Superseded by the 2026-10-25 median GPS sampling decision.
 - **Decision:** When recording landmarks/offices, the admin stops for 4 seconds while the app samples GPS fixes, discards fixes with `accuracy > 10m`, and computes the average.
 - **Why:** Single-frame GPS fixes can be heavily skewed by multipath reflections near building walls. Averaging over several seconds filters high-frequency noise and stabilizes entrance coordinates.
 
@@ -80,6 +82,35 @@ This file logs key architectural decisions, rationale ("Why"), and constraints. 
 
 ---
 
-### 2026-04-01: Map Deletion and Bundled Fallback
+### 2026-04-01: Map Deletion and Bundled Fallback — Superseded
+- **Status:** Superseded by the 2026-10-25 immediate bundled map reload decision.
 - **Decision:** The "Clear Map" function in the Admin UI deletes the user's persistent data file. On the next application restart, the system automatically falls back to the read-only bundled map stored in `StreamingAssets`.
 - **Why:** To ensure the app is never in a broken state without a map. If an admin makes a mistake during survey, deleting the save allows them to revert to the factory-shipped campus map immediately.
+
+---
+
+### 2026-10-25: Explicit Recording Endpoint Confirmation
+- **Decision:** Silent 3.5m node reuse is removed. `StartRecording(startNodeId)` and `StopAndSaveRecording(endNodeId)` use explicit node IDs selected through admin confirmation dialogs.
+- **Why:** Admins choose whether to reuse an existing node or create a new point, avoiding unintended graph connections.
+- **Supersedes:** 2026-03-31 Session Resumption Without Redundant Start Points.
+
+---
+
+### 2026-10-25: Median GPS Sampling for Destinations and Anchors
+- **Decision:** The destination/anchor-position sampling workflow uses a median over a 20–30 s window (25 s default) and requires at least 10 distinct GPS fixes, identified by `LastFixTimestamp`. Insufficient data aborts recording. This replaces the former 4 s averaging policy.
+- **Scope:** `MarkDestination` and `MarkDestinationAtAnchor` use this GPS sampling workflow. `RecordQRAnchor` stores the tracked image pose and heading in MapRoot-local space.
+- **Why:** Distinct fixes and a longer median window reduce the influence of GPS outliers near buildings.
+- **Supersedes:** 2026-03-30 Multi-Sample Averaging for Destinations & Anchors.
+
+---
+
+### 2026-10-25: Immediate Bundled Map Reload and Editor Save Behavior
+- **Decision:** Clear Map (`DeleteSavedMap`) deletes the persistent map file and immediately reloads the bundled map. No application restart is required. In the Editor, saves also overwrite the map in `StreamingAssets`.
+- **Why:** Clearing a save restores the bundled map immediately. Editor saves also change the bundled baseline, so clearing persistent data does not recover an earlier bundled version.
+- **Supersedes:** 2026-04-01 Map Deletion and Bundled Fallback.
+
+---
+
+### 2026-10-25: Destination Helper at an Anchor
+- **Decision:** `MarkDestinationAtAnchor(anchorId, label)` creates a Destination at the user's averaged GPS position, using the median sampling workflow. It links the destination to the specified anchor and to the nearest non-anchor walkway node so A* can reach it without routing through the anchor.
+- **Why:** QR anchors remain calibration spurs while destinations remain reachable from the walkway graph.

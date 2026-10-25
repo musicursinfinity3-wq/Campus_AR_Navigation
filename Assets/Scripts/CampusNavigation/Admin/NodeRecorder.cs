@@ -707,10 +707,12 @@ return nearest;
             HashSet<string> excludedIds = new HashSet<string>();
             if (currentRecordedMap == null) return excludedIds;
 
-            int skipCount = Math.Min(RECENT_NODE_EXCLUSION_COUNT, currentRecordedMap.nodes.Count);
-            for (int i = 0; i < skipCount; i++)
+            for (int i = currentRecordedMap.nodes.Count - 1;
+                 i >= 0 && excludedIds.Count < RECENT_NODE_EXCLUSION_COUNT; i--)
             {
-                excludedIds.Add(currentRecordedMap.nodes[currentRecordedMap.nodes.Count - 1 - i].id);
+                CampusNode node = currentRecordedMap.nodes[i];
+                if (node.nodeType == NodeType.QRAnchor) continue;
+                excludedIds.Add(node.id);
             }
 
             if (lastRecordedNode != null)
@@ -1136,14 +1138,23 @@ return nearest;
                 }
 
                 // Otherwise insert Intersection node
+                double intersectionLatitude = 0;
+                double intersectionLongitude = 0;
+                if (Math.Abs(nodeA.latitude) > 0.0001 && Math.Abs(nodeA.longitude) > 0.0001 &&
+                    Math.Abs(nodeB.latitude) > 0.0001 && Math.Abs(nodeB.longitude) > 0.0001)
+                {
+                    float t = bestT / segmentLen;
+                    intersectionLatitude = nodeA.latitude + (nodeB.latitude - nodeA.latitude) * t;
+                    intersectionLongitude = nodeA.longitude + (nodeB.longitude - nodeA.longitude) * t;
+                }
                 CampusNode intersection = new CampusNode
                 {
                     id = NextNodeId(),
                     label = "Intersection",
                     nodeType = NodeType.Intersection,
                     localPosition = splitPoint,
-                    latitude = AndroidSensorManager.Instance != null ? AndroidSensorManager.Instance.CurrentLatitude : 0,
-                    longitude = AndroidSensorManager.Instance != null ? AndroidSensorManager.Instance.CurrentLongitude : 0,
+                    latitude = intersectionLatitude,
+                    longitude = intersectionLongitude,
                     recordedTimestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
                 };
                 currentRecordedMap.nodes.Add(intersection);

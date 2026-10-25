@@ -221,7 +221,7 @@ namespace CampusNavigation.Navigation
                 (GpsRelocalizer.Instance != null && GpsRelocalizer.Instance.HasPerformedInitialSnap))
             {
                 // Keep any status message (e.g. "You have arrived") set just before navigation ended
-                ShowSearchPanel(false);
+                ShowSearchPanelInternal(false);
             }
             else
             {
@@ -423,14 +423,14 @@ namespace CampusNavigation.Navigation
             {
                 sessionManager.StopNavigation();
             }
-            ShowSearchPanel();
+            ShowSearchPanelInternal(true);
         }
 
         private void OnReachedDestination()
         {
             // Don't clear status here, then set the arrival message after the panel switch.
-            // (HandleNavigationEnded also calls ShowSearchPanel(false) right after this event.)
-            ShowSearchPanel(false);
+            // (HandleNavigationEnded also calls ShowSearchPanelInternal(false) right after this event.)
+            ShowSearchPanelInternal(false);
             ShowFeedbackMessage("You have arrived at your destination!");
         }
 
@@ -450,10 +450,16 @@ namespace CampusNavigation.Navigation
         // listeners such as bypassButton.onClick and to external callers.
         public void ShowSearchPanel()
         {
-            ShowSearchPanel(true);
+            if (sessionManager != null && sessionManager.IsNavigating) return;
+            ShowSearchPanelInternal(true);
         }
 
         public void ShowSearchPanel(bool clearStatus)
+        {
+            ShowSearchPanelInternal(clearStatus);
+        }
+
+        private void ShowSearchPanelInternal(bool clearStatus)
         {
             SetPanelState(startPanel: false, scanPrompt: false, search: true, activeNav: false);
             if (clearStatus && statusFeedbackText != null)

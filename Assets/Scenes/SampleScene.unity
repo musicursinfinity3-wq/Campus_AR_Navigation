@@ -701,7 +701,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!224 &124347803
 RectTransform:
   m_ObjectHideFlags: 0
@@ -1276,6 +1276,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::CampusNavigation.Admin.AdminUIController
   recorder: {fileID: 707544277}
+  mapRoot: {fileID: 0}
+  arCameraTransform: {fileID: 0}
   clearMapButton: {fileID: 841908640}
   adminPanel: {fileID: 185978105}
   recordButton: {fileID: 357395959}
@@ -1285,6 +1287,7 @@ MonoBehaviour:
   statsText: {fileID: 751487906}
   bypassDestinationButton: {fileID: 2123182454}
   linkJunctionButton: {fileID: 2110557069}
+  joinPathButton: {fileID: 0}
   startPanel: {fileID: 8199608086797606253}
   scanPromptPanel: {fileID: 124347802}
   userNavPanel: {fileID: 793440472}
@@ -1344,7 +1347,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!224 &198365786
 RectTransform:
   m_ObjectHideFlags: 0
@@ -4876,6 +4879,7 @@ MonoBehaviour:
   smoothLerpDuration: 0.5
   maxAllowedPosDiscrepancy: 10
   maxAllowedYawDiscrepancy: 30
+  pendingCorrectionTimeoutSeconds: 10
   showDebugOverlay: 1
   verboseLogging: 1
   debugOverlayScale: 2
@@ -4928,8 +4932,6 @@ MonoBehaviour:
   sampleDurationSeconds: 4
   sampleIntervalSeconds: 0.5
   manualJunctionLinkRadius: 12
-  autoConnectIntersections: 1
-  intersectionConnectRadius: 3
   arCameraTransform: {fileID: 2512387469332387801}
   mapRoot: {fileID: 2133799770}
   nodeDebugMarkerPrefab: {fileID: 8986328500875594450, guid: d825bbdf58c379d4290da92e387f71d0, type: 3}
@@ -17419,7 +17421,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!1 &8314374400586033142
 GameObject:
   m_ObjectHideFlags: 0

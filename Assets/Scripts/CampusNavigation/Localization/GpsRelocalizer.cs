@@ -265,7 +265,7 @@ namespace CampusNavigation.Localization
             }
 
             float currentAccuracy = AndroidSensorManager.Instance.HorizontalAccuracy;
-            if (currentAccuracy > inMotionMaxAccuracyMeters)
+            if (currentAccuracy >= inMotionMaxAccuracyMeters)
             {
                 // Poor fix: restart the whole measurement window (GPS + camera baseline), not just the camera samples
                 ResetMotionTracking();
@@ -273,7 +273,7 @@ namespace CampusNavigation.Localization
             }
 
             // First good fix after a poor one: re-baseline now instead of waiting a full displacement window
-            if (lastMotionAccuracy > inMotionMaxAccuracyMeters)
+            if (lastMotionAccuracy >= inMotionMaxAccuracyMeters)
             {
                 ResetMotionTracking();
                 return;
@@ -298,7 +298,7 @@ namespace CampusNavigation.Localization
             if (gpsDist >= minRequired)
 {
                 // Accuracy check at both ends
-                if (lastMotionAccuracy > inMotionMaxAccuracyMeters)
+                if (lastMotionAccuracy >= inMotionMaxAccuracyMeters)
                 {
                     ResetMotionTracking();
                     return;
@@ -328,12 +328,18 @@ namespace CampusNavigation.Localization
 
                     // Chord stability check: rejection if user didn't walk roughly straight (15% limit)
                     // Flatten y coordinates for planar chord analysis
+                    Vector3 chordStart = new Vector3(lastMotionCamPos.x, 0f, lastMotionCamPos.z);
+                    Vector3 chordEnd = new Vector3(arCameraTransform.position.x, 0f, arCameraTransform.position.z);
+                    float chordLength = Vector3.Distance(chordStart, chordEnd);
+                    if (chordLength < 0.1f)
+                    {
+                        ResetMotionTracking();
+                        return;
+                    }
                     if (windowCamPositions.Count > 2)
                     {
                         float maxLateralDev = 0f;
-                        Vector3 chordStart = new Vector3(lastMotionCamPos.x, 0f, lastMotionCamPos.z);
-                        Vector3 chordEnd = new Vector3(arCameraTransform.position.x, 0f, arCameraTransform.position.z);
-                        Vector3 chordDir = (chordEnd - chordStart).normalized;
+                        Vector3 chordDir = (chordEnd - chordStart) / chordLength;
                         
                         foreach (var pos in windowCamPositions)
                         {
@@ -343,7 +349,7 @@ namespace CampusNavigation.Localization
                             maxLateralDev = Mathf.Max(maxLateralDev, lateral.magnitude);
                         }
 
-                        if (maxLateralDev > 0.15f * gpsDist)
+                        if (maxLateralDev > 0.15f * chordLength)
                         {
                             ResetMotionTracking();
                             return;
