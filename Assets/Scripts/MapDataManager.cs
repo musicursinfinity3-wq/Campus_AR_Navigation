@@ -107,12 +107,13 @@ namespace CampusNavigation.Data
         }
 
         /// <summary>
-        /// Loads the map. Checks persistentDataPath first (user updates/admin recordings),
-        /// falling back to StreamingAssets (bundled read-only build map).
+        /// Loads both sources, preferring the bundled map only when strictly newer.
+        /// Missing savedTimestamp fields default to zero for backward compatibility.
         /// </summary>
         public void LoadMap(Action<CampusMapData> onComplete = null)
         {
             string persistentPath = Path.Combine(Application.persistentDataPath, MAP_FILE_NAME);
+            CampusMapData persistentMap = null;
 
             // 1. Check persistent data path first (e.g. updated map or recorded on-device)
             if (File.Exists(persistentPath))
@@ -120,11 +121,9 @@ namespace CampusNavigation.Data
                 try
                 {
                     string json = File.ReadAllText(persistentPath);
-                    CurrentMap = JsonUtility.FromJson<CampusMapData>(json);
-                    Debug.Log("[MapDataManager] Loaded map from persistentDataPath.");
-                    onComplete?.Invoke(CurrentMap);
-                    OnMapLoaded?.Invoke(CurrentMap);
-                    return;
+                    persistentMap = JsonUtility.FromJson<CampusMapData>(json);
+                    if (persistentMap == null)
+                        Debug.LogWarning("[MapDataManager] Persistent map parsed as null, falling back to StreamingAssets.");
                 }
                 catch (Exception ex)
                 {
@@ -134,8 +133,8 @@ namespace CampusNavigation.Data
                 }
             }
 
-            // 2. Fall back to StreamingAssets (works asynchronously on Android APK)
-            StartCoroutine(LoadFromStreamingAssetsCoroutine(onComplete));
+            // Always read the bundled map before choosing (asynchronous on Android APK).
+            StartCoroutine(LoadFromStreamingAssetsCoroutine(onComplete, persistentMap));
         }
 
         public void SetCurrentMap(CampusMapData mapData)
@@ -145,7 +144,8 @@ namespace CampusNavigation.Data
         }
 
         private System.Collections.IEnumerator LoadFromStreamingAssetsCoroutine(
-Action<CampusMapData> onComplete
+            Action<CampusMapData> onComplete,
+            CampusMapData persistentMap
         )
         {
             string streamingPath = Path.Combine(Application.streamingAssetsPath, MAP_FILE_NAME);
@@ -172,25 +172,55 @@ Action<CampusMapData> onComplete
                 // Standalone / iOS / Editor
                 if (File.Exists(streamingPath))
                 {
-                    json = File.ReadAllText(streamingPath);
+                    try
+                    {
+                        json = File.ReadAllText(streamingPath);
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.LogWarning($"[MapDataManager] StreamingAssets read failed: {ex.Message}");
+                    }
                 }
             }
 
+            CampusMapData bundledMap = null;
             if (!string.IsNullOrEmpty(json))
             {
-                CurrentMap = JsonUtility.FromJson<CampusMapData>(json);
-                Debug.Log(
-                    $"[MapDataManager] Loaded map from StreamingAssets. Nodes: {CurrentMap.nodes.Count}"
-                );
+                try
+                {
+                    bundledMap = JsonUtility.FromJson<CampusMapData>(json);
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogWarning($"[MapDataManager] StreamingAssets map parse failed: {ex.Message}");
+                }
+            }
+
+            long persistentTimestamp = persistentMap?.savedTimestamp ?? 0;
+            long bundledTimestamp = bundledMap?.savedTimestamp ?? 0;
+            string winningSource;
+            if (bundledMap != null &&
+                (persistentMap == null || bundledTimestamp > persistentTimestamp))
+            {
+                CurrentMap = bundledMap;
+                winningSource = "StreamingAssets";
+            }
+            else if (persistentMap != null)
+            {
+                CurrentMap = persistentMap;
+                winningSource = "persistentDataPath";
             }
             else
             {
                 Debug.LogWarning(
-                    "[MapDataManager] No map file found in StreamingAssets. Initializing blank map."
+                    "[MapDataManager] No usable map found in either source. Initializing blank map."
                 );
                 CurrentMap = new CampusMapData();
+                winningSource = "blank map";
             }
 
+            Debug.Log($"[MapDataManager] Map source selected: {winningSource}. " +
+                $"persistent savedTimestamp={persistentTimestamp}, bundled savedTimestamp={bundledTimestamp}.");
             onComplete?.Invoke(CurrentMap);
             OnMapLoaded?.Invoke(CurrentMap);
         }
