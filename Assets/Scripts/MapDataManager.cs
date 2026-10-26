@@ -94,7 +94,8 @@ namespace CampusNavigation.Data
         }
 
         /// <summary>
-        /// Deletes the saved map file from the device and clears the in-memory map.
+        /// Deletes the persistent map and reloads StreamingAssets. In the Editor,
+        /// the bundled map is the last Editor-saved version because saves overwrite it.
         /// </summary>
         public bool DeleteSavedMap()
         {
@@ -108,6 +109,10 @@ namespace CampusNavigation.Data
                 }
 
                 // Immediately revert to bundled map in memory
+#if UNITY_EDITOR
+                Debug.LogWarning("[MapDataManager] Editor saves also overwrite StreamingAssets. " +
+                    "The reloaded bundled map is the last Editor-saved version, not an earlier original map.");
+#endif
                 LoadMap();
                 return true;
             }

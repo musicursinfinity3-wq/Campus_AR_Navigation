@@ -190,7 +190,7 @@ if (requireAccessible && !edge.isAccessible) continue;
         }
 
         /// <summary>
-        /// Helper to find the closest node in the map to a 3D position (e.g. current AR Camera position).
+        /// Helper to find the closest node in the map using horizontal (x/z) distance.
         /// </summary>
         public CampusNode FindNearestNode(Vector3 localPosition)
         {
@@ -206,7 +206,9 @@ if (requireAccessible && !edge.isAccessible) continue;
                     continue;
 
                 // Compare MapRoot-Local to MapRoot-Local
-                float distSqr = (node.localPosition - localPosition).sqrMagnitude;
+                float dx = node.localPosition.x - localPosition.x;
+                float dz = node.localPosition.z - localPosition.z;
+                float distSqr = dx * dx + dz * dz;
                 if (distSqr < minDistanceSqr)
                 {
                     minDistanceSqr = distSqr;

@@ -49,6 +49,7 @@ namespace CampusNavigation.Visualizer
         private List<CampusNode> currentRoute = new List<CampusNode>();
         private List<GameObject> activeRouteObjects = new List<GameObject>();
         private List<int> activeArrowSegmentIndex = new List<int>();
+        private GameObject destinationPin;
         private int currentSegment;
         private bool destinationReachedLogged;
         private int currentTargetIndex = 0;
@@ -115,17 +116,11 @@ namespace CampusNavigation.Visualizer
             currentSegment = bestSegment;
             currentTargetIndex = currentSegment + 1;
 
-            if (!destinationReachedLogged && currentSegment == currentRoute.Count - 2)
+            if (!destinationReachedLogged)
             {
-                Vector3 startPos = currentRoute[currentSegment].localPosition;
-                Vector3 endPos = currentRoute[currentSegment + 1].localPosition;
-                Vector2 start = new Vector2(startPos.x, startPos.z);
+                Vector3 endPos = currentRoute[currentRoute.Count - 1].localPosition;
                 Vector2 end = new Vector2(endPos.x, endPos.z);
-                Vector2 segment = end - start;
-                bool passedEnd = segment.sqrMagnitude > 0f
-                    ? Vector2.Dot(userPos - start, segment) >= segment.sqrMagnitude
-                    : (userPos - end).sqrMagnitude <= 0.0001f;
-                if (passedEnd)
+                if (Vector2.Distance(userPos, end) <= waypointReachRadius)
                 {
                     destinationReachedLogged = true;
                     Debug.Log("[ARRouteVisualizer] Destination reached!");
@@ -139,15 +134,17 @@ namespace CampusNavigation.Visualizer
                 for (int i = 0; i < activeRouteObjects.Count; i++)
                 {
                     GameObject arrow = activeRouteObjects[i];
-                    if (activeArrowSegmentIndex[i] < currentSegment)
+                    if (arrow != destinationPin && activeArrowSegmentIndex[i] < currentSegment)
                     {
                         if (arrow != null) Destroy(arrow);
-                        activeRouteObjects[i] = null;
+                        activeRouteObjects.RemoveAt(i);
+                        activeArrowSegmentIndex.RemoveAt(i);
+                        i--;
                         continue;
                     }
                     if (arrow != null)
                     {
-                        if (activeArrowSegmentIndex[i] == currentSegment)
+                        if (arrow != destinationPin && activeArrowSegmentIndex[i] == currentSegment)
                         {
                             Vector3 segmentStart = currentRoute[currentSegment].localPosition;
                             Vector3 segmentEnd = currentRoute[currentSegment + 1].localPosition;
@@ -166,7 +163,6 @@ namespace CampusNavigation.Visualizer
                                 }
                                 float arrowAlong = Vector2.Dot(arrowLocalXZ - segStart, dir);
                                 float userAlong = Vector2.Dot(localUserPos - segStart, dir);
-                                // The pin is at the segment end, so it survives until the user passes it.
                                 if (arrowAlong < userAlong - 0.5f)
                                 {
                                     Destroy(arrow);
@@ -239,6 +235,7 @@ namespace CampusNavigation.Visualizer
                 currentRoute[currentRoute.Count - 1].localPosition + Vector3.up * groundYOffset;
             destinationPos.y = groundYOffset;
             GameObject pin = SpawnDestinationPin(destinationPos);
+            destinationPin = pin;
             if (pin != null)
             {
                 activeRouteObjects.Add(pin);
@@ -262,6 +259,7 @@ namespace CampusNavigation.Visualizer
             }
             activeRouteObjects.Clear();
             activeArrowSegmentIndex.Clear();
+            destinationPin = null;
             currentRoute.Clear();
             currentSegment = 0;
             destinationReachedLogged = false;

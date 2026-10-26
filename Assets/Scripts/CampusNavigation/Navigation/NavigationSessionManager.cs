@@ -245,7 +245,9 @@ namespace CampusNavigation.Navigation
             }
 
             // 3. Distance check in unified local space
-            float distToStart = Vector3.Distance(userLocalPos, nearest.localPosition);
+            float distToStart = Vector2.Distance(
+                new Vector2(userLocalPos.x, userLocalPos.z),
+                new Vector2(nearest.localPosition.x, nearest.localPosition.z));
             if (distToStart > maxSnapRadius)
             {
                 string error =

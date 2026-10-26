@@ -499,6 +499,11 @@ recorder = NodeRecorder.Instance != null ? NodeRecorder.Instance : FindFirstObje
 
         private void OnClearMapClicked()
         {
+            if (recorder != null && recorder.IsRecording)
+            {
+                ShowTimedStatusMessage("Stop recording before clearing the map", 3.0f);
+                return;
+            }
             if (MapDataManager.Instance != null)
             {
                 MapDataManager.Instance.DeleteSavedMap();
