@@ -25,3 +25,7 @@ MemoryCaptures/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Unity generated build diagnostics
+/*_BackUpThisFolder_ButDontShipItWithYourGame/
+/*_BurstDebugInformation_DoNotShip/
